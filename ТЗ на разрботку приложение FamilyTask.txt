@@ -1,0 +1,237 @@
+0) Цель прототипа (Definition of Done)
+
+Сделать работающий прототип семейного task-manager в Telegram:
+
+Пользователь открывает Mini App из лички с ботом (menu button / кнопка “Open”).
+
+Создаёт “Дом” (Home), приглашает участника по invite-ссылке.
+
+Создаёт задачи и рутины, видит экран Today, отмечает выполнение.
+
+Бот умеет:
+
+привязать семейный групповой чат к дому (/link),
+
+слать утренний дайджест в группу,
+
+слать вечерний чек-ин в группу (кнопка “Закрыть день”).
+
+Очки за выполнение + стрик по дому.
+
+Данные в БД, авторизация Mini App через Telegram initData (HMAC server-side).
+
+Запуск локально через docker-compose.
+
+1) Жёстко фиксируем стек (без “или”)
+
+Backend: Node.js 20 + TypeScript + Express + Prisma + Zod
+Bot: Telegraf
+DB: Postgres (только Postgres)
+Frontend (Mini App): Next.js (App Router) + TS + Tailwind + shadcn/ui
+Scheduling: один “тикер” (cron раз в 1 минуту) + проверка, кому пора слать дайджест/чек-ин по timezone
+Infra: docker-compose (db + backend + web)
+
+2) Важные правила Telegram (чтобы не упереться)
+2.1 Авторизация Mini App
+
+На клиенте берём Telegram.WebApp.initData
+
+Отправляем в POST /auth/telegram
+
+На сервере валидируем initData (HMAC) и только после этого создаём/находим пользователя.
+
+2.2 Как открывать Mini App из группы
+
+web_app кнопки (inline web_app) считаем private-only.
+
+В групповых сообщениях используем URL-кнопку/ссылку на direct link Mini App:
+https://t.me/<botusername>/<appname>?startapp=<payload>
+Параметр попадёт в tgWebAppStartParam.
+
+2.3 Отправка дайджеста/карточек
+
+В прототипе все сообщения в группу отправляет бот (sendMessage).
+
+Не делаем “сообщения от имени пользователя” как обязательную фичу (это усложнение и зависит от типа запуска webview). Telegram описывает answerWebAppQuery, но это не must для V1.
+
+3) Роли и сценарии (User Stories)
+
+Owner: создаёт дом, приглашает, привязывает чат, управляет рутинами
+Member: видит Today, выполняет задачи/рутины
+
+Сценарии:
+
+/start в личке → кнопка “Open FamilyPulse” (открыть Mini App)
+
+Если домов нет → mini app показывает onboarding: create/join
+
+Owner в группе пишет /link → дом привязывается к этому чату
+
+/invite → бот создаёт invite и шлёт ссылку
+
+Today → отметить done → начислить очки → обновить статы
+
+4) Модель данных (Prisma) — с идемпотентностью
+
+Оставляем твою схему, но добавляем обязательные ограничения:
+
+HomeMember: unique(homeId, userId)
+
+Invite: unique(code)
+
+RoutineInstance: unique(routineId, date)
+
+Streak: unique(homeId, date)
+
+ScoreEvent: unique(homeId, userId, sourceType, sourceId)
+→ чтобы повторный done не давал повторные очки.
+
+Храним telegramId и telegramChatId как string (группы могут быть отрицательные id, плюс безопаснее для JS).
+
+5) Backend API (контракты + правила ошибок)
+Auth
+
+POST /auth/telegram
+
+body: { initData: string }
+
+resp: { token, user, homes, activeHomeId }
+
+ошибки: 401 если initData невалидна
+
+Active Home
+
+В User храним activeHomeId (nullable)
+
+Любой запрос работает в контексте activeHomeId (если не передан homeId)
+
+Homes
+
+POST /homes { name, timezone? }
+
+GET /homes/current
+
+POST /homes/switch { homeId }
+
+Invites
+
+POST /invites { maxUses?, expiresAt? } → создаётся для current home
+
+POST /invites/join { code }
+
+Tasks
+
+POST /tasks { title, description?, dueDate?, assigneeId?, points? }
+
+GET /tasks?date&scope=all|mine
+
+POST /tasks/:id/done → идемпотентно
+
+Routines
+
+POST /routines { title, scheduleType, daysOfWeek?, timeOfDay?, assigneeMode, fixedAssigneeId?, points? }
+
+GET /routines
+
+POST /routines/:id/toggle
+
+Today
+
+GET /today?date&scope=all|mine
+
+POST /routine-instances/:id/done → идемпотентно
+
+Scoreboard
+
+GET /scoreboard?period=week|month
+
+Bot integration
+
+НЕ делаем POST /bot/link-chat руками.
+/link в чате сам знает chat.id и дергает backend с ним.
+
+6) Scheduling (дайджест/чек-ин) — понятно для LLM
+
+Один job раз в минуту:
+
+берём все ChatLink.enabled=true
+
+для каждого дома считаем “локальное время дома” по timezone
+
+если локально == 09:00 и ещё не слали сегодня → шлём дайджест
+
+если локально == 21:30 и ещё не слали сегодня → шлём чек-ин
+
+7) Telegram Bot поведение
+
+Команды:
+
+/start (личка): привет + кнопка открыть Mini App
+
+/invite (owner): создать invite → отправить в чат
+
+/link (owner, в группе): привязать текущий чат к active home
+
+/digest (owner): отправить дайджест сейчас
+
+/help
+
+Кнопки:
+
+“Open FamilyPulse” → web app (в личке)
+
+“Закрыть день ✅” → callback → закрывает streak за сегодня (идемпотентно)
+
+8) Mini App UI (экраны)
+
+Onboarding: Create Home / Join by code / Select Home
+
+Today: Moё/Всё, секции Tasks + Routines (instances), done, прогресс, points, streak
+
+Tasks: список + создание
+
+Routines: список + создание + toggle
+
+Home: участники, invite link, timezone, статус привязки группы (“сделайте /link в группе”)
+
+9) Логика рутин (Today)
+
+При GET /today:
+
+находим активные Routine
+
+проверяем, должна ли быть сегодня
+
+если RoutineInstance нет → создаём (с assignment по mode)
+
+возвращаем instances
+
+ROTATE (прототип):
+
+берём отсортированный список участников
+
+индекс = (YYYYMMDD mod count)
+
+assignedTo = members[index]
+
+10) Нефункциональные требования (минимально, но обязательно)
+
+InitData валидация обязательна.
+
+ACL: пользователь должен быть member current home
+
+Валидация входных данных (Zod)
+
+README: docker-compose up, миграции, env
+
+Seed script: создать тестовый дом + 2 пользователей (или фиктивные записи)
+
+11) План разработки (шаги для Cursor)
+
+A) scaffolding monorepo + docker-compose + prisma + миграции
+B) Auth initData + JWT + middleware
+C) Homes + activeHomeId + invites/join
+D) Tasks + Today endpoint + UI Today/Tasks
+E) Routines + RoutineInstance generation + UI Routines
+F) Bot команды + /link + scheduler digest/check-in
+G) Полировка: идемпотентность, ошибки, базовый UI
