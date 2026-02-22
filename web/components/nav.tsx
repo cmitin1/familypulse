@@ -5,16 +5,16 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 const items = [
-  { href: "/", label: "Today" },
-  { href: "/tasks", label: "Tasks" },
-  { href: "/routines", label: "Routines" },
-  { href: "/home", label: "Home" }
+  { href: "/", label: "Сегодня" },
+  { href: "/tasks", label: "Задачи" },
+  { href: "/routines", label: "Рутины" },
+  { href: "/home", label: "Дом" }
 ];
 
 export function BottomNav() {
   const pathname = usePathname();
   return (
-    <nav className="mt-4 grid grid-cols-4 gap-2">
+    <nav className="sticky bottom-3 mt-4 grid grid-cols-4 gap-2 rounded-lg border border-border bg-white/90 p-2 backdrop-blur">
       {items.map((item) => (
         <Link
           key={item.href}

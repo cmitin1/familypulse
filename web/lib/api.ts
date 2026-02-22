@@ -1,4 +1,4 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 type RequestOptions = {
   method?: string;
@@ -6,7 +6,33 @@ type RequestOptions = {
   token?: string;
 };
 
+export class ApiError extends Error {
+  status: number;
+  details?: unknown;
+
+  constructor(message: string, status: number, details?: unknown) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.details = details;
+  }
+}
+
+export function getErrorMessage(error: unknown): string {
+  if (error instanceof ApiError) {
+    return error.message;
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return "Неизвестная ошибка";
+}
+
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  if (!API_URL) {
+    throw new Error("NEXT_PUBLIC_API_URL не настроен");
+  }
+
   const res = await fetch(`${API_URL}${path}`, {
     method: options.method ?? "GET",
     headers: {
@@ -18,8 +44,25 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   });
 
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `HTTP ${res.status}`);
+    let message = `HTTP ${res.status}`;
+    let details: unknown;
+    try {
+      const data = await res.json();
+      details = data;
+      if (typeof data?.error === "string") {
+        message = data.error;
+      } else if (typeof data?.message === "string") {
+        message = data.message;
+      } else if (typeof data === "string") {
+        message = data;
+      }
+    } catch {
+      const text = await res.text();
+      if (text) {
+        message = text;
+      }
+    }
+    throw new ApiError(message, res.status, details);
   }
   return res.json();
 }
@@ -34,6 +77,8 @@ export const api = {
   getToday: (token: string, scope: "all" | "mine" = "mine") => request<any>(`/today?scope=${scope}`, { token }),
   getTasks: (token: string, scope: "all" | "mine" = "mine") => request<any>(`/tasks?scope=${scope}`, { token }),
   createTask: (token: string, payload: any) => request<any>("/tasks", { method: "POST", token, body: payload }),
+  updateTask: (token: string, id: string, payload: any) =>
+    request<any>(`/tasks/${id}`, { method: "PATCH", token, body: payload }),
   doneTask: (token: string, id: string) => request<any>(`/tasks/${id}/done`, { method: "POST", token }),
   getRoutines: (token: string) => request<any>("/routines", { token }),
   createRoutine: (token: string, payload: any) =>

@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { BottomNav } from "@/components/nav";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { api } from "@/lib/api";
+import { Alert } from "@/components/ui/alert";
+import { api, getErrorMessage } from "@/lib/api";
 import { getToken } from "@/lib/session";
 
 export default function HomePage() {
@@ -12,41 +13,56 @@ export default function HomePage() {
   const [home, setHome] = useState<any>(null);
   const [invite, setInvite] = useState<any>(null);
   const [scoreboard, setScoreboard] = useState<any[]>([]);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     const t = getToken();
     setToken(t);
     if (!t) return;
-    Promise.all([api.getCurrentHome(t), api.getScoreboard(t)]).then(([h, s]) => {
-      setHome(h);
-      setScoreboard(s);
-    });
+    Promise.all([api.getCurrentHome(t), api.getScoreboard(t)])
+      .then(([h, s]) => {
+        setHome(h);
+        setScoreboard(s);
+      })
+      .catch((err) => setError(getErrorMessage(err)));
   }, []);
 
   return (
     <div className="space-y-3">
-      <Card className="space-y-1">
+      {error ? <Alert variant="error">{error}</Alert> : null}
+      <Card className="space-y-2">
         <h1 className="text-lg font-semibold">Home</h1>
-        <p className="text-sm">{home?.name}</p>
-        <p className="text-sm text-slate-600">Timezone: {home?.timezone}</p>
+        <p className="text-sm">{home?.name || "Дом не выбран"}</p>
+        <p className="text-sm text-slate-600">Timezone: {home?.timezone || "—"}</p>
         <p className="text-sm text-slate-600">
-          Group link: {home?.chatLinks?.length ? "Привязано" : "Сделайте /link в группе"}
+          Group link: {home?.chatLinks?.length ? "Привязано" : "Сделайте /link в семейной группе"}
+        </p>
+        <p className="text-xs text-slate-500">
+          Чтобы бот отправлял дайджесты в чат, откройте нужную группу и выполните команду `/link`.
         </p>
       </Card>
       <Card className="space-y-2">
         <h2 className="font-medium">Members</h2>
-        {(home?.members ?? []).map((member: any) => (
-          <div key={member.id} className="rounded border p-2 text-sm">
-            {member.user.firstName || member.user.username} ({member.role})
-          </div>
-        ))}
+        {(home?.members ?? []).length === 0 ? (
+          <p className="text-sm text-slate-500">Участников пока нет</p>
+        ) : (
+          (home?.members ?? []).map((member: any) => (
+            <div key={member.id} className="rounded border p-2 text-sm">
+              {member.user.firstName || member.user.username} ({member.role})
+            </div>
+          ))
+        )}
       </Card>
       <Card className="space-y-2">
         <Button
           onClick={async () => {
             if (!token) return;
-            const inv = await api.createInvite(token);
-            setInvite(inv);
+            try {
+              const inv = await api.createInvite(token);
+              setInvite(inv);
+            } catch (err) {
+              setError(getErrorMessage(err));
+            }
           }}
         >
           Create invite

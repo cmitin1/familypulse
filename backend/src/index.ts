@@ -10,8 +10,8 @@ async function start() {
   await bot.launch();
   startScheduler();
 
-  app.listen(config.port, () => {
-    console.log(`Backend listening on :${config.port}`);
+  app.listen(config.port, "0.0.0.0", () => {
+    console.log(`Backend listening on 0.0.0.0:${config.port}`);
   });
 
   process.once("SIGINT", async () => {

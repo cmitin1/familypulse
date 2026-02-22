@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import { api, getErrorMessage } from "@/lib/api";
 import { getToken, setToken } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { BottomNav } from "@/components/nav";
+import { Alert } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
 
 declare global {
   interface Window {
@@ -17,21 +19,32 @@ declare global {
 export default function TodayPage() {
   const [token, setTokenState] = useState("");
   const [status, setStatus] = useState("Инициализация...");
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
   const [home, setHome] = useState<any>(null);
   const [today, setToday] = useState<any>(null);
+  const [scope, setScope] = useState<"mine" | "all">("mine");
   const [joinCode, setJoinCode] = useState("");
-  const [homeName, setHomeName] = useState("My Home");
+  const [homeName, setHomeName] = useState("Наш дом");
+  const [notice, setNotice] = useState("");
 
   useEffect(() => {
+    const tg = window.Telegram?.WebApp;
+    tg?.ready?.();
+    tg?.expand?.();
+
     const existing = getToken();
     if (existing) {
       setTokenState(existing);
+      setStatus("OK");
       return;
     }
 
-    const initData = window.Telegram?.WebApp?.initData;
+    const initData = tg?.initData;
     if (!initData) {
-      setStatus("Нет initData. Откройте страницу из Telegram Mini App.");
+      // Не показываем "нет initData" при открытии в Mini App.
+      setStatus(tg ? "Проверьте подключение Mini App и откройте снова" : "Откройте страницу из Telegram Mini App");
+      setIsLoading(false);
       return;
     }
     api
@@ -39,45 +52,76 @@ export default function TodayPage() {
       .then((resp) => {
         setToken(resp.token);
         setTokenState(resp.token);
+        setStatus("OK");
       })
-      .catch(() => setStatus("Ошибка авторизации Telegram"));
+      .catch((err) => {
+        setStatus("Ошибка авторизации Telegram");
+        setError(getErrorMessage(err));
+      })
+      .finally(() => setIsLoading(false));
   }, []);
 
   useEffect(() => {
     if (!token) return;
-    Promise.all([api.getCurrentHome(token), api.getToday(token, "mine")])
+    setIsLoading(true);
+    Promise.all([api.getCurrentHome(token), api.getToday(token, scope)])
       .then(([h, t]) => {
         setHome(h);
         setToday(t);
         setStatus("OK");
+        setError("");
       })
-      .catch(() => setStatus("Не удалось загрузить данные"));
-  }, [token]);
+      .catch((err) => {
+        setStatus("Не удалось загрузить данные");
+        setError(getErrorMessage(err));
+      })
+      .finally(() => setIsLoading(false));
+  }, [token, scope]);
 
   async function reload() {
     if (!token) return;
-    const [h, t] = await Promise.all([api.getCurrentHome(token), api.getToday(token, "mine")]);
-    setHome(h);
-    setToday(t);
+    setIsLoading(true);
+    try {
+      const [h, t] = await Promise.all([api.getCurrentHome(token), api.getToday(token, scope)]);
+      setHome(h);
+      setToday(t);
+      setError("");
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setIsLoading(false);
+    }
   }
 
-  if (!token) {
-    return <Card>{status}</Card>;
+  if (!token && status !== "OK") {
+    return (
+      <Card className="space-y-2">
+        <h1 className="text-lg font-semibold">FamilyPulse</h1>
+        <p className="text-sm text-slate-600">{status}</p>
+        {error ? <Alert variant="error">{error}</Alert> : null}
+      </Card>
+    );
   }
 
   if (!home?.id) {
     return (
       <div className="space-y-4">
+        {error ? <Alert variant="error">{error}</Alert> : null}
         <Card className="space-y-3">
-          <h1 className="text-lg font-semibold">Onboarding</h1>
+          <h1 className="text-lg font-semibold">Добро пожаловать в FamilyPulse</h1>
+          <p className="text-sm text-slate-600">Создайте дом или присоединитесь по инвайт-коду.</p>
           <Input value={homeName} onChange={(e) => setHomeName(e.target.value)} placeholder="Название дома" />
           <Button
             onClick={async () => {
-              await api.createHome(token, homeName, "Europe/Moscow");
-              await reload();
+              try {
+                await api.createHome(token, homeName, "Europe/Moscow");
+                await reload();
+              } catch (err) {
+                setError(getErrorMessage(err));
+              }
             }}
           >
-            Create Home
+            Создать дом
           </Button>
         </Card>
         <Card className="space-y-3">
@@ -85,62 +129,140 @@ export default function TodayPage() {
           <Button
             variant="outline"
             onClick={async () => {
-              await api.joinInvite(token, joinCode);
-              await reload();
+              try {
+                await api.joinInvite(token, joinCode);
+                await reload();
+              } catch (err) {
+                setError(getErrorMessage(err));
+              }
             }}
           >
-            Join by code
+            Войти по коду
           </Button>
         </Card>
       </div>
     );
   }
 
+  const done = today?.doneCount ?? 0;
+  const total = today?.totalCount ?? 0;
+  const progress = total > 0 ? Math.round((done / total) * 100) : 0;
+
   return (
-    <div className="space-y-3">
-      <Card>
-        <h1 className="text-lg font-semibold">Today</h1>
-        <p className="text-sm text-slate-600">{home.name}</p>
-        <p className="text-sm">Streak closed: {today?.streakClosed ? "yes" : "no"}</p>
+    <div className="space-y-4">
+      {error ? <Alert variant="error">{error}</Alert> : null}
+      {notice ? <Alert variant="info">{notice}</Alert> : null}
+      <Card className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h1 className="text-lg font-semibold">Сегодня</h1>
+          <div className="inline-flex rounded-md border border-border bg-white p-1">
+            <Button size="sm" variant={scope === "mine" ? "default" : "outline"} onClick={() => setScope("mine")}>
+              Мои
+            </Button>
+            <Button size="sm" variant={scope === "all" ? "default" : "outline"} onClick={() => setScope("all")}>
+              Все
+            </Button>
+          </div>
+        </div>
+        <p className="text-sm text-slate-600">
+          {home.name} • {today?.date ?? "—"}
+        </p>
+        <div className="grid grid-cols-2 gap-2 text-sm md:grid-cols-4">
+          <div className="rounded-md bg-slate-50 p-2">Прогресс: {done}/{total}</div>
+          <div className="rounded-md bg-slate-50 p-2">Выполнено: {progress}%</div>
+          <div className="rounded-md bg-slate-50 p-2">Очки сегодня: {today?.pointsToday ?? 0}</div>
+          <div className="rounded-md bg-slate-50 p-2">Стрик: {today?.streakClosed ? "закрыт" : "открыт"}</div>
+        </div>
+        <Button
+          variant="outline"
+          onClick={() => setNotice("TODO: endpoint для отправки дайджеста из Mini App пока не реализован")}
+        >
+          Share Today to chat
+        </Button>
       </Card>
 
-      <Card className="space-y-2">
-        <h2 className="font-medium">Tasks</h2>
-        {(today?.tasks ?? []).map((task: any) => (
-          <div key={task.id} className="flex items-center justify-between rounded border p-2 text-sm">
-            <span>{task.title}</span>
-            {task.status === "DONE" ? (
-              <span>done</span>
+      {isLoading ? (
+        <Card className="space-y-3">
+          <Skeleton className="h-5 w-40" />
+          <Skeleton className="h-12 w-full" />
+          <Skeleton className="h-12 w-full" />
+          <Skeleton className="h-12 w-full" />
+        </Card>
+      ) : (
+        <>
+          <Card className="space-y-2">
+            <h2 className="font-medium">Tasks</h2>
+            {(today?.tasks ?? []).length === 0 ? (
+              <p className="rounded-md border border-dashed p-3 text-sm text-slate-500">Нет задач — добавьте первую</p>
             ) : (
-              <Button size="sm" onClick={async () => { await api.doneTask(token, task.id); await reload(); }}>
-                done
-              </Button>
+              (today?.tasks ?? []).map((task: any) => (
+                <div key={task.id} className="flex items-center justify-between rounded-md border bg-white p-3 text-sm">
+                  <div>
+                    <p className="font-medium">{task.title}</p>
+                    <p className="text-xs text-slate-500">
+                      {task.assignee?.firstName || task.assignee?.username || "Без исполнителя"}
+                    </p>
+                  </div>
+                  {task.status === "DONE" ? (
+                    <span className="rounded bg-emerald-100 px-2 py-1 text-emerald-700">done</span>
+                  ) : (
+                    <Button
+                      size="sm"
+                      onClick={async () => {
+                        try {
+                          await api.doneTask(token, task.id);
+                          await reload();
+                        } catch (err) {
+                          setError(getErrorMessage(err));
+                        }
+                      }}
+                    >
+                      done
+                    </Button>
+                  )}
+                </div>
+              ))
             )}
-          </div>
-        ))}
-      </Card>
+          </Card>
 
-      <Card className="space-y-2">
-        <h2 className="font-medium">Routines</h2>
-        {(today?.routineInstances ?? []).map((item: any) => (
-          <div key={item.id} className="flex items-center justify-between rounded border p-2 text-sm">
-            <span>{item.routine.title}</span>
-            {item.isDone ? (
-              <span>done</span>
+          <Card className="space-y-2 border-sky-200 bg-sky-50/50">
+            <h2 className="font-medium text-sky-900">Routines</h2>
+            {(today?.routineInstances ?? []).length === 0 ? (
+              <p className="rounded-md border border-dashed border-sky-200 p-3 text-sm text-sky-700">
+                Нет рутин на сегодня — добавьте первую
+              </p>
             ) : (
-              <Button
-                size="sm"
-                onClick={async () => {
-                  await api.doneRoutineInstance(token, item.id);
-                  await reload();
-                }}
-              >
-                done
-              </Button>
+              (today?.routineInstances ?? []).map((item: any) => (
+                <div key={item.id} className="flex items-center justify-between rounded-md border bg-white p-3 text-sm">
+                  <div>
+                    <p className="font-medium">{item.routine.title}</p>
+                    <p className="text-xs text-slate-500">
+                      {item.assignee?.firstName || item.assignee?.username || "Без исполнителя"}
+                    </p>
+                  </div>
+                  {item.isDone ? (
+                    <span className="rounded bg-emerald-100 px-2 py-1 text-emerald-700">done</span>
+                  ) : (
+                    <Button
+                      size="sm"
+                      onClick={async () => {
+                        try {
+                          await api.doneRoutineInstance(token, item.id);
+                          await reload();
+                        } catch (err) {
+                          setError(getErrorMessage(err));
+                        }
+                      }}
+                    >
+                      done
+                    </Button>
+                  )}
+                </div>
+              ))
             )}
-          </div>
-        ))}
-      </Card>
+          </Card>
+        </>
+      )}
       <BottomNav />
     </div>
   );

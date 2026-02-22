@@ -51,8 +51,7 @@ function shouldRoutineRunToday(daysOfWeek: number[], scheduleType: RoutineSchedu
 async function assignRotate(homeId: string, dateYmd: string): Promise<string | null> {
   const members = await prisma.homeMember.findMany({
     where: { homeId },
-    include: { user: true },
-    orderBy: { createdAt: "asc" }
+    orderBy: { userId: "asc" }
   });
   if (!members.length) {
     return null;
@@ -92,9 +91,8 @@ export async function ensureTodayRoutineInstances(homeId: string, dateYmd: strin
         date: targetDate,
         assigneeId
       },
-      update: {
-        assigneeId
-      }
+      // Existing instance for this routine/date must stay stable.
+      update: {}
     });
   }
 }

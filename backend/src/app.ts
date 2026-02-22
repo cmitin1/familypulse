@@ -1,7 +1,7 @@
 import express from "express";
 import cors from "cors";
 import { z } from "zod";
-import { SourceType } from "@prisma/client";
+import { SourceType, TaskStatus } from "@prisma/client";
 import { validateTelegramInitData, signJwt } from "./auth.js";
 import { config } from "./config.js";
 import { prisma } from "./db.js";
@@ -17,6 +17,15 @@ import {
 const app = express();
 app.use(cors({ origin: config.corsOrigin === "*" ? true : config.corsOrigin }));
 app.use(express.json());
+
+const ymdSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format");
+
+function zodBadRequest(res: express.Response, parsed: { error: z.ZodError }) {
+  return res.status(400).json({
+    error: "Validation failed",
+    details: parsed.error.flatten()
+  });
+}
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
@@ -202,15 +211,15 @@ app.use(requireHome);
 
 app.post("/tasks", async (req, res) => {
   const schema = z.object({
-    title: z.string().min(2),
-    description: z.string().optional(),
+    title: z.string().trim().min(1, "Title is required"),
+    description: z.string().trim().optional(),
     dueDate: z.string().datetime().optional(),
-    assigneeId: z.string().optional(),
+    assigneeId: z.string().min(1).nullable().optional(),
     points: z.number().int().positive().optional()
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ error: "Invalid payload" });
+    return zodBadRequest(res, parsed);
   }
   const { homeId } = (req as HomeRequest).context;
   if (parsed.data.assigneeId) {
@@ -227,7 +236,7 @@ app.post("/tasks", async (req, res) => {
       title: parsed.data.title,
       description: parsed.data.description,
       dueDate: parsed.data.dueDate ? new Date(parsed.data.dueDate) : undefined,
-      assigneeId: parsed.data.assigneeId,
+      assigneeId: parsed.data.assigneeId ?? undefined,
       points: parsed.data.points ?? 5
     }
   });
@@ -236,15 +245,106 @@ app.post("/tasks", async (req, res) => {
 
 app.get("/tasks", async (req, res) => {
   const { homeId } = (req as HomeRequest).context;
-  const scope = req.query.scope === "mine" ? "mine" : "all";
-  const date = String(req.query.date ?? "");
+  const home = await prisma.home.findUnique({ where: { id: homeId } });
+  if (!home) {
+    return res.status(404).json({ error: "Home not found" });
+  }
+  const scopeParsed = z.enum(["mine", "all"]).safeParse(req.query.scope ?? "all");
+  if (!scopeParsed.success) {
+    return zodBadRequest(res, scopeParsed);
+  }
+  const scope = scopeParsed.data;
+  const dateRaw = String(req.query.date ?? "");
   const userId = (req as HomeRequest).user.id;
 
   const where: any = { homeId };
   if (scope === "mine") where.assigneeId = userId;
-  if (date) where.dueDate = { gte: new Date(`${date}T00:00:00.000Z`), lte: new Date(`${date}T23:59:59.999Z`) };
-  const tasks = await prisma.task.findMany({ where, orderBy: [{ status: "asc" }, { createdAt: "desc" }] });
+  if (dateRaw) {
+    const dateParsed = ymdSchema.safeParse(dateRaw);
+    if (!dateParsed.success) {
+      return zodBadRequest(res, dateParsed);
+    }
+    const start = localDateStart(dateParsed.data, home.timezone);
+    const end = localDateEnd(dateParsed.data, home.timezone);
+    where.dueDate = { gte: start, lte: end };
+  }
+  const tasks = await prisma.task.findMany({
+    where,
+    include: { assignee: { select: { id: true, firstName: true, username: true } } },
+    orderBy: [{ status: "asc" }, { createdAt: "desc" }]
+  });
   return res.json(tasks);
+});
+
+app.patch("/tasks/:id", async (req, res) => {
+  const schema = z
+    .object({
+      status: z.nativeEnum(TaskStatus).optional(),
+      assigneeId: z.string().min(1).nullable().optional(),
+      dueDate: z.string().datetime().nullable().optional()
+    })
+    .refine((data) => data.status !== undefined || data.assigneeId !== undefined || data.dueDate !== undefined, {
+      message: "Nothing to update"
+    });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    return zodBadRequest(res, parsed);
+  }
+
+  const { homeId } = (req as HomeRequest).context;
+  const user = (req as HomeRequest).user;
+  const task = await prisma.task.findFirst({ where: { id: req.params.id, homeId } });
+  if (!task) {
+    return res.status(404).json({ error: "Task not found" });
+  }
+
+  if (parsed.data.assigneeId) {
+    const assigneeMembership = await prisma.homeMember.findUnique({
+      where: { homeId_userId: { homeId, userId: parsed.data.assigneeId } }
+    });
+    if (!assigneeMembership) {
+      return res.status(400).json({ error: "Assignee is not a member of this home" });
+    }
+  }
+
+  const updateData: any = {};
+  if (parsed.data.assigneeId !== undefined) {
+    updateData.assigneeId = parsed.data.assigneeId;
+  }
+  if (parsed.data.dueDate !== undefined) {
+    updateData.dueDate = parsed.data.dueDate ? new Date(parsed.data.dueDate) : null;
+  }
+
+  const isMarkingDone = parsed.data.status === TaskStatus.DONE && task.status !== TaskStatus.DONE;
+  if (parsed.data.status !== undefined) {
+    updateData.status = parsed.data.status;
+    if (parsed.data.status === TaskStatus.DONE) {
+      updateData.doneAt = task.doneAt ?? new Date();
+      updateData.doneById = task.doneById ?? user.id;
+    } else {
+      updateData.doneAt = null;
+      updateData.doneById = null;
+    }
+  }
+
+  const updated = await prisma.task.update({
+    where: { id: task.id },
+    data: updateData
+  });
+
+  let awarded = false;
+  if (isMarkingDone) {
+    const awardResult = await awardPointsIdempotent({
+      homeId,
+      userId: user.id,
+      sourceType: SourceType.TASK,
+      sourceId: task.id,
+      points: task.points
+    });
+    awarded = awardResult.awarded;
+  }
+
+  return res.json({ task: updated, awarded });
 });
 
 app.post("/tasks/:id/done", async (req, res) => {
@@ -272,18 +372,59 @@ app.post("/tasks/:id/done", async (req, res) => {
 });
 
 app.post("/routines", async (req, res) => {
-  const schema = z.object({
-    title: z.string().min(2),
-    scheduleType: z.enum(["DAILY", "WEEKLY"]),
-    daysOfWeek: z.array(z.number().int().min(0).max(6)).optional(),
-    timeOfDay: z.string().optional(),
-    assigneeMode: z.enum(["FIXED", "ROTATE"]),
-    fixedAssigneeId: z.string().optional(),
-    points: z.number().int().positive().optional()
-  });
+  const schema = z
+    .object({
+      title: z.string().trim().min(1, "Title is required"),
+      scheduleType: z.enum(["DAILY", "WEEKLY"]),
+      daysOfWeek: z.array(z.number().int().min(0).max(6)).optional(),
+      timeOfDay: z.string().optional(),
+      assigneeMode: z.enum(["FIXED", "ROTATE"]),
+      fixedAssigneeId: z.string().min(1).optional(),
+      points: z.number().int().positive().optional()
+    })
+    .superRefine((data, ctx) => {
+      if (data.scheduleType === "WEEKLY" && (!data.daysOfWeek || data.daysOfWeek.length === 0)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "daysOfWeek is required for WEEKLY routines",
+          path: ["daysOfWeek"]
+        });
+      }
+      if (data.scheduleType === "DAILY" && data.daysOfWeek && data.daysOfWeek.length > 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "daysOfWeek must be empty for DAILY routines",
+          path: ["daysOfWeek"]
+        });
+      }
+      if (data.daysOfWeek) {
+        const unique = new Set(data.daysOfWeek);
+        if (unique.size !== data.daysOfWeek.length) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "daysOfWeek values must be unique",
+            path: ["daysOfWeek"]
+          });
+        }
+      }
+      if (data.assigneeMode === "FIXED" && !data.fixedAssigneeId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "fixedAssigneeId is required for FIXED mode",
+          path: ["fixedAssigneeId"]
+        });
+      }
+      if (data.assigneeMode === "ROTATE" && data.fixedAssigneeId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "fixedAssigneeId is not allowed for ROTATE mode",
+          path: ["fixedAssigneeId"]
+        });
+      }
+    });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ error: "Invalid payload", issues: parsed.error.flatten() });
+    return zodBadRequest(res, parsed);
   }
 
   const { homeId, role } = (req as HomeRequest).context;
@@ -303,7 +444,10 @@ app.post("/routines", async (req, res) => {
       homeId,
       title: parsed.data.title,
       scheduleType: parsed.data.scheduleType,
-      daysOfWeek: parsed.data.scheduleType === "WEEKLY" ? parsed.data.daysOfWeek ?? [] : [],
+      daysOfWeek:
+        parsed.data.scheduleType === "WEEKLY"
+          ? [...new Set(parsed.data.daysOfWeek ?? [])].sort((a, b) => a - b)
+          : [],
       timeOfDay: parsed.data.timeOfDay,
       assigneeMode: parsed.data.assigneeMode,
       fixedAssigneeId: parsed.data.fixedAssigneeId,
@@ -337,24 +481,33 @@ app.post("/routines/:id/toggle", async (req, res) => {
 
 app.get("/today", async (req, res) => {
   const { homeId } = (req as HomeRequest).context;
-  const scope = req.query.scope === "mine" ? "mine" : "all";
+  const scopeParsed = z.enum(["mine", "all"]).safeParse(req.query.scope ?? "all");
+  if (!scopeParsed.success) {
+    return zodBadRequest(res, scopeParsed);
+  }
+  const scope = scopeParsed.data;
   const home = await prisma.home.findUnique({ where: { id: homeId } });
   if (!home) {
     return res.status(404).json({ error: "Home not found" });
   }
-  const dateYmd = String(req.query.date ?? ymdInTimezone(new Date(), home.timezone));
+  const dateParsed = ymdSchema.safeParse(String(req.query.date ?? ymdInTimezone(new Date(), home.timezone)));
+  if (!dateParsed.success) {
+    return zodBadRequest(res, dateParsed);
+  }
+  const dateYmd = dateParsed.data;
   await ensureTodayRoutineInstances(homeId, dateYmd);
   const start = localDateStart(dateYmd, home.timezone);
   const end = localDateEnd(dateYmd, home.timezone);
   const userId = (req as HomeRequest).user.id;
 
-  const [tasks, routines, streak] = await Promise.all([
+  const [tasks, routines, streak, userPoints] = await Promise.all([
     prisma.task.findMany({
       where: {
         homeId,
         OR: [{ dueDate: null }, { dueDate: { gte: start, lte: end } }],
         ...(scope === "mine" ? { assigneeId: userId } : {})
       },
+      include: { assignee: { select: { id: true, firstName: true, username: true } } },
       orderBy: { createdAt: "desc" }
     }),
     prisma.routineInstance.findMany({
@@ -363,12 +516,30 @@ app.get("/today", async (req, res) => {
         date: { gte: start, lte: end },
         ...(scope === "mine" ? { assigneeId: userId } : {})
       },
-      include: { routine: true },
+      include: {
+        routine: true,
+        assignee: { select: { id: true, firstName: true, username: true } }
+      },
       orderBy: { createdAt: "asc" }
     }),
-    prisma.streak.findUnique({ where: { homeId_date: { homeId, date: start } } })
+    prisma.streak.findUnique({ where: { homeId_date: { homeId, date: start } } }),
+    prisma.scoreEvent.aggregate({
+      where: { homeId, userId, createdAt: { gte: start, lte: end } },
+      _sum: { points: true }
+    })
   ]);
-  return res.json({ date: dateYmd, tasks, routineInstances: routines, streakClosed: Boolean(streak) });
+  const doneCount =
+    tasks.filter((task) => task.status === TaskStatus.DONE).length + routines.filter((routine) => routine.isDone).length;
+  const totalCount = tasks.length + routines.length;
+  return res.json({
+    date: dateYmd,
+    tasks,
+    routineInstances: routines,
+    streakClosed: Boolean(streak),
+    pointsToday: userPoints._sum.points ?? 0,
+    doneCount,
+    totalCount
+  });
 });
 
 app.post("/routine-instances/:id/done", async (req, res) => {
