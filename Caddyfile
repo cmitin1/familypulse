@@ -1,0 +1,7 @@
+https://api.158.160.226.78.nip.io {
+  reverse_proxy backend:4000
+}
+
+https://app.158.160.226.78.nip.io {
+  reverse_proxy web:3000
+}
