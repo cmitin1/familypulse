@@ -22,17 +22,19 @@ async function resolveOwnerActiveHome(telegramUserId: string) {
 }
 
 bot.start(async (ctx) => {
-  const isPrivate = ctx.chat?.type === "private";
-  if (!isPrivate) {
-    await ctx.reply("Откройте Mini App по ссылке:", Markup.inlineKeyboard([
-      Markup.button.url("Open FamilyPulse", miniAppDirectUrl("from_group_start"))
-    ]));
-    return;
-  }
-  await ctx.reply(
-    "FamilyPulse готов. Откройте Mini App:",
-    Markup.inlineKeyboard([Markup.button.webApp("Open FamilyPulse", config.miniAppUrl)])
-  );
+  await ctx.reply("FamilyPulse готов. Откройте Mini App:", {
+    reply_markup: {
+      inline_keyboard: [[{ text: "📋 Открыть FamilyPulse", web_app: { url: config.miniAppUrl } }]]
+    }
+  });
+});
+
+bot.command("app", async (ctx) => {
+  await ctx.reply("Открыть FamilyPulse:", {
+    reply_markup: {
+      inline_keyboard: [[{ text: "📋 Открыть FamilyPulse", web_app: { url: config.miniAppUrl } }]]
+    }
+  });
 });
 
 bot.command("help", async (ctx) => {
