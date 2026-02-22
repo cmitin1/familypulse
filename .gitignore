@@ -32,3 +32,17 @@ caddy_config/
 **/.ssh/
 id_ed25519
 id_ed25519.pub
+# server-only / local artifacts
+docker-compose.yml.bak
+Exported/
+
+
+
+# server-only / exports
+Exported/
+*.bak
+.env
+.env.*
+
+# server-only
+Exported/

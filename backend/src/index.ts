@@ -1,32 +1,29 @@
-import app from "./app.js";
-import { config } from "./config.js";
-import { prisma } from "./db.js";
-import { bot } from "./bot.js";
-import { startScheduler } from "./scheduler.js";
+async function main() {
+  // Подхватываем Express app из app.ts независимо от того, как он экспортируется
+  const mod: any = await import("./app");
+  const maybeCreate = typeof mod.createApp === "function" ? mod.createApp() : null;
+  const app: any = mod.default ?? mod.app ?? maybeCreate;
 
-async function start() {
-  await prisma.$connect();
+  if (!app || typeof app.listen !== "function") {
+    throw new Error(
+      "Cannot find Express app export in ./app (expected default export, named 'app', or createApp())."
+    );
+  }
 
-  await bot.launch();
-  startScheduler();
+  // Health endpoint
+  if (typeof app.get === "function") {
+    app.get("/health", (_req: any, res: any) => res.status(200).json({ ok: true }));
+  }
 
-  app.listen(config.port, "0.0.0.0", () => {
-    console.log(`Backend listening on 0.0.0.0:${config.port}`);
-  });
+  const port = Number(process.env.PORT || 4000);
+  const host = process.env.HOST || "0.0.0.0";
 
-  process.once("SIGINT", async () => {
-    await bot.stop("SIGINT");
-    await prisma.$disconnect();
-    process.exit(0);
-  });
-  process.once("SIGTERM", async () => {
-    await bot.stop("SIGTERM");
-    await prisma.$disconnect();
-    process.exit(0);
+  app.listen(port, host, () => {
+    console.log(`FamilyPulse API listening on http://${host}:${port}`);
   });
 }
 
-start().catch((err) => {
-  console.error(err);
+main().catch((err) => {
+  console.error("Fatal startup error:", err);
   process.exit(1);
 });
