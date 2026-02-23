@@ -1,4 +1,5 @@
 import { AiAssigneeMode, AiSuggestionStatus, AiSuggestionType, type Prisma } from "@prisma/client";
+import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { prisma } from "../../../db.js";
 import type { ExtractionSuggestion } from "../schemas/extraction.schema.js";
 
@@ -58,6 +59,17 @@ function resolveAssigneeUserIds(hints: string[], members: HomeMemberLite[]): str
   return [...matched];
 }
 
+function parseJsonStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string" && item.length > 0);
+}
+
+function defaultTaskDueAt(timezone: string): Date {
+  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const ymd = formatInTimeZone(tomorrow, timezone, "yyyy-MM-dd");
+  return fromZonedTime(`${ymd}T20:00:00`, timezone);
+}
+
 export class AiSuggestionService {
   async saveFromExtraction(input: {
     homeId: string;
@@ -67,6 +79,11 @@ export class AiSuggestionService {
     allowedMessageIds?: number[];
   }) {
     const allowedMessageIds = new Set(input.allowedMessageIds ?? []);
+    const home = await prisma.home.findUnique({
+      where: { id: input.homeId },
+      select: { timezone: true }
+    });
+    const timezone = home?.timezone ?? "UTC";
     const members = await prisma.homeMember.findMany({
       where: { homeId: input.homeId },
       select: {
@@ -74,6 +91,7 @@ export class AiSuggestionService {
         user: { select: { firstName: true, username: true } }
       }
     });
+    const allMemberIds = members.map((member) => member.userId);
 
     let created = 0;
     let deduped = 0;
@@ -93,11 +111,28 @@ export class AiSuggestionService {
         continue;
       }
 
-      const assigneeIds = resolveAssigneeUserIds(item.assignee.userHints, members);
-      const assigneeMode = toAssigneeMode(item.assignee.mode);
-      const dueAt = parseDateLoose(item.time.dueAtText);
+      let assigneeIds = resolveAssigneeUserIds(item.assignee.userHints, members);
+      let assigneeMode = toAssigneeMode(item.assignee.mode);
+      if (item.type === "task") {
+        if (assigneeMode === AiAssigneeMode.SINGLE && assigneeIds.length > 1) {
+          assigneeIds = assigneeIds.slice(0, 1);
+        }
+        if (assigneeMode === AiAssigneeMode.ALL && assigneeIds.length === 0) {
+          assigneeIds = allMemberIds;
+        }
+        if (assigneeMode === AiAssigneeMode.UNASSIGNED || (assigneeMode === AiAssigneeMode.SINGLE && assigneeIds.length === 0)) {
+          if (allMemberIds.length > 0) {
+            assigneeMode = AiAssigneeMode.ALL;
+            assigneeIds = allMemberIds;
+          }
+        }
+      }
+      let dueAt = parseDateLoose(item.time.dueAtText);
       const startAt = parseDateLoose(item.time.startAtText);
       const endAt = parseDateLoose(item.time.endAtText);
+      if (item.type === "task" && !dueAt) {
+        dueAt = defaultTaskDueAt(timezone);
+      }
 
       const descriptionParts = [item.description ?? null];
       if (!dueAt && item.time.dueAtText) {
@@ -174,21 +209,65 @@ export class AiSuggestionService {
     status: AiSuggestionStatus;
     approvedByUserId?: string;
   }) {
-    const existing = await prisma.aiSuggestion.findFirst({
-      where: { id: input.suggestionId, homeId: input.homeId }
-    });
-    if (!existing) {
-      return null;
-    }
-    const updated = await prisma.aiSuggestion.update({
-      where: { id: existing.id },
-      data: {
-        status: input.status,
-        ...(input.status === AiSuggestionStatus.APPROVED
-          ? { approvedByUserId: input.approvedByUserId ?? null }
-          : {})
+    const result = await prisma.$transaction(async (tx) => {
+      const existing = await tx.aiSuggestion.findFirst({
+        where: { id: input.suggestionId, homeId: input.homeId }
+      });
+      if (!existing) {
+        return null;
       }
+
+      // Idempotency: repeated approve/reject calls should not re-run side effects.
+      if (existing.status === input.status) {
+        return existing;
+      }
+
+      const updated = await tx.aiSuggestion.update({
+        where: { id: existing.id },
+        data: {
+          status: input.status,
+          ...(input.status === AiSuggestionStatus.APPROVED
+            ? { approvedByUserId: input.approvedByUserId ?? null }
+            : {})
+        }
+      });
+
+      // Point improvement for MVP UX:
+      // On APPROVE for TASK suggestions, materialize a real Task in safe, explicit user action flow.
+      if (existing.type === AiSuggestionType.TASK && input.status === AiSuggestionStatus.APPROVED) {
+        const members = await tx.homeMember.findMany({
+          where: { homeId: existing.homeId },
+          select: { userId: true }
+        });
+        const memberIds = new Set(members.map((m) => m.userId));
+        const rawAssigneeIds = parseJsonStringArray(existing.proposedAssigneeUserIds);
+        const validAssigneeIds = rawAssigneeIds.filter((userId) => memberIds.has(userId));
+        const assigneeIds =
+          existing.proposedAssigneeMode === AiAssigneeMode.ALL
+            ? [...memberIds]
+            : existing.proposedAssigneeMode === AiAssigneeMode.SINGLE
+              ? validAssigneeIds.slice(0, 1)
+              : [];
+
+        await tx.task.create({
+          data: {
+            homeId: existing.homeId,
+            title: existing.title,
+            description: existing.description ?? undefined,
+            dueDate: existing.proposedDueAt ?? undefined,
+            assigneeId: assigneeIds[0] ?? undefined,
+            assignees: assigneeIds.length
+              ? {
+                  create: assigneeIds.map((userId) => ({ userId }))
+                }
+              : undefined
+          }
+        });
+      }
+
+      return updated;
     });
-    return updated;
+
+    return result;
   }
 }

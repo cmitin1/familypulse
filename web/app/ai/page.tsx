@@ -17,6 +17,7 @@ type Suggestion = {
   description: string | null;
   confidence: number | null;
   proposedAssigneeMode: "SINGLE" | "ALL" | "UNASSIGNED" | null;
+  proposedAssigneeUserIds: string[] | null;
   proposedDueAt: string | null;
   proposedStartAt: string | null;
   proposedEndAt: string | null;
@@ -33,23 +34,57 @@ export default function AiInboxPage() {
   const [summaryText, setSummaryText] = useState("");
   const [summaryStats, setSummaryStats] = useState<{ tasks: number; routines: number; events: number; aiSuggestions: number } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [memberNamesById, setMemberNamesById] = useState<Record<string, string>>({});
 
   async function load(currentToken: string) {
     setLoading(true);
     try {
-      const [list, summary] = await Promise.all([
+      const [list, summary, home] = await Promise.all([
         api.getAiSuggestions(currentToken, { status: "pending", limit: 50 }),
-        api.getAiTodaySummary(currentToken)
+        api.getAiTodaySummary(currentToken),
+        api.getCurrentHome(currentToken)
       ]);
       setSuggestions(list.rows ?? []);
       setSummaryText(summary.summaryText ?? "");
       setSummaryStats(summary.stats ?? null);
+      const map: Record<string, string> = {};
+      for (const member of home?.members ?? []) {
+        const user = member?.user;
+        if (user?.id) {
+          map[user.id] = user.firstName || user.username || user.id;
+        }
+      }
+      setMemberNamesById(map);
       setError("");
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
+  }
+
+  function renderAssignee(item: Suggestion): string {
+    const ids = Array.isArray(item.proposedAssigneeUserIds) ? item.proposedAssigneeUserIds : [];
+    const names = ids.map((id) => memberNamesById[id] ?? id).filter(Boolean);
+    if (item.proposedAssigneeMode === "ALL") {
+      return names.length ? `Все: ${names.join(", ")}` : "Все участники";
+    }
+    if (item.proposedAssigneeMode === "SINGLE") {
+      return names[0] ?? "Назначить вручную";
+    }
+    return "Назначить вручную";
+  }
+
+  function renderTime(item: Suggestion): string {
+    if (item.proposedDueAt) {
+      return `Срок: ${new Date(item.proposedDueAt).toLocaleString("ru-RU")}`;
+    }
+    if (item.proposedStartAt) {
+      const start = new Date(item.proposedStartAt).toLocaleString("ru-RU");
+      const end = item.proposedEndAt ? new Date(item.proposedEndAt).toLocaleString("ru-RU") : null;
+      return end ? `Время: ${start} → ${end}` : `Время: ${start}`;
+    }
+    return "Срок: назначить вручную";
   }
 
   useEffect(() => {
@@ -139,11 +174,8 @@ export default function AiInboxPage() {
                 <p className="text-sm font-semibold text-foreground">{item.title}</p>
                 {item.description ? <p className="text-sm text-muted-foreground whitespace-pre-wrap">{item.description}</p> : null}
                 <div className="text-xs text-muted-foreground">
-                  <p>Исполнитель: {item.proposedAssigneeMode?.toLowerCase() ?? "не назначен"}</p>
-                  <p>
-                    Время: {item.proposedDueAt ?? item.proposedStartAt ?? "—"}
-                    {item.proposedEndAt ? ` → ${item.proposedEndAt}` : ""}
-                  </p>
+                  <p>Исполнитель: {renderAssignee(item)}</p>
+                  <p>{renderTime(item)}</p>
                   <p>Источники: {refsCount} сообщений</p>
                   <p>Создано: {new Date(item.createdAt).toLocaleString("ru-RU")}</p>
                 </div>
