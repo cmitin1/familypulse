@@ -130,7 +130,7 @@ export class AiSuggestionService {
       let dueAt = parseDateLoose(item.time.dueAtText);
       const startAt = parseDateLoose(item.time.startAtText);
       const endAt = parseDateLoose(item.time.endAtText);
-      if (item.type === "task" && !dueAt) {
+      if (item.type === "task" && !dueAt && !item.time.dueAtText) {
         dueAt = defaultTaskDueAt(timezone);
       }
 
@@ -208,6 +208,10 @@ export class AiSuggestionService {
     suggestionId: string;
     status: AiSuggestionStatus;
     approvedByUserId?: string;
+    taskOverride?: {
+      dueDate?: Date | null;
+      assigneeIds?: string[];
+    };
   }) {
     const result = await prisma.$transaction(async (tx) => {
       const existing = await tx.aiSuggestion.findFirst({
@@ -226,6 +230,13 @@ export class AiSuggestionService {
         where: { id: existing.id },
         data: {
           status: input.status,
+          ...(input.taskOverride?.dueDate !== undefined ? { proposedDueAt: input.taskOverride.dueDate } : {}),
+          ...(input.taskOverride?.assigneeIds !== undefined
+            ? {
+                proposedAssigneeMode: input.taskOverride.assigneeIds.length ? AiAssigneeMode.ALL : AiAssigneeMode.UNASSIGNED,
+                proposedAssigneeUserIds: input.taskOverride.assigneeIds.length ? input.taskOverride.assigneeIds : null
+              }
+            : {}),
           ...(input.status === AiSuggestionStatus.APPROVED
             ? { approvedByUserId: input.approvedByUserId ?? null }
             : {})
@@ -240,21 +251,28 @@ export class AiSuggestionService {
           select: { userId: true }
         });
         const memberIds = new Set(members.map((m) => m.userId));
-        const rawAssigneeIds = parseJsonStringArray(existing.proposedAssigneeUserIds);
+        const rawAssigneeIds =
+          input.taskOverride?.assigneeIds !== undefined
+            ? input.taskOverride.assigneeIds
+            : parseJsonStringArray(existing.proposedAssigneeUserIds);
         const validAssigneeIds = rawAssigneeIds.filter((userId) => memberIds.has(userId));
         const assigneeIds =
-          existing.proposedAssigneeMode === AiAssigneeMode.ALL
+          input.taskOverride?.assigneeIds !== undefined
+            ? validAssigneeIds
+            : existing.proposedAssigneeMode === AiAssigneeMode.ALL
             ? [...memberIds]
             : existing.proposedAssigneeMode === AiAssigneeMode.SINGLE
               ? validAssigneeIds.slice(0, 1)
               : [];
+        const dueDateForTask =
+          input.taskOverride?.dueDate !== undefined ? input.taskOverride.dueDate : existing.proposedDueAt;
 
         await tx.task.create({
           data: {
             homeId: existing.homeId,
             title: existing.title,
             description: existing.description ?? undefined,
-            dueDate: existing.proposedDueAt ?? undefined,
+            dueDate: dueDateForTask ?? undefined,
             assigneeId: assigneeIds[0] ?? undefined,
             assignees: assigneeIds.length
               ? {

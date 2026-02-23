@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, getErrorMessage } from "@/lib/api";
+import { fromInputDateTimeValue, toInputDateTimeValue } from "@/lib/datetime";
 import { getToken } from "@/lib/session";
 
 type Suggestion = {
@@ -35,6 +36,7 @@ export default function AiInboxPage() {
   const [summaryStats, setSummaryStats] = useState<{ tasks: number; routines: number; events: number; aiSuggestions: number } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [memberNamesById, setMemberNamesById] = useState<Record<string, string>>({});
+  const [dueDraftById, setDueDraftById] = useState<Record<string, string>>({});
 
   async function load(currentToken: string) {
     setLoading(true);
@@ -45,6 +47,11 @@ export default function AiInboxPage() {
         api.getCurrentHome(currentToken)
       ]);
       setSuggestions(list.rows ?? []);
+      const drafts: Record<string, string> = {};
+      for (const row of list.rows ?? []) {
+        drafts[row.id] = toInputDateTimeValue(row.proposedDueAt ?? "");
+      }
+      setDueDraftById((prev) => ({ ...prev, ...drafts }));
       setSummaryText(summary.summaryText ?? "");
       setSummaryStats(summary.stats ?? null);
       const map: Record<string, string> = {};
@@ -101,7 +108,11 @@ export default function AiInboxPage() {
     if (!token) return;
     try {
       if (action === "approve") {
-        await api.approveAiSuggestion(token, id);
+        const item = suggestions.find((s) => s.id === id);
+        const dueDraft = dueDraftById[id] ?? "";
+        await api.approveAiSuggestion(token, id, {
+          dueDate: item?.type === "TASK" ? (dueDraft ? fromInputDateTimeValue(dueDraft) : null) : undefined
+        });
       } else if (action === "reject") {
         await api.rejectAiSuggestion(token, id);
       } else {
@@ -179,6 +190,25 @@ export default function AiInboxPage() {
                   <p>Источники: {refsCount} сообщений</p>
                   <p>Создано: {new Date(item.createdAt).toLocaleString("ru-RU")}</p>
                 </div>
+                {item.type === "TASK" ? (
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">Срок перед подтверждением</label>
+                    <input
+                      type="datetime-local"
+                      value={dueDraftById[item.id] ?? ""}
+                      onChange={(e) =>
+                        setDueDraftById((prev) => ({
+                          ...prev,
+                          [item.id]: e.target.value
+                        }))
+                      }
+                      className="h-10 w-full rounded-lg border border-input bg-card px-3 text-sm text-foreground"
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      Можно оставить пустым — задача создастся без дедлайна.
+                    </p>
+                  </div>
+                ) : null}
                 <div className="grid grid-cols-3 gap-2">
                   <Button size="sm" onClick={() => updateStatus(item.id, "approve")}>
                     ✅ Подтвердить

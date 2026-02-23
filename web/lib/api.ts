@@ -164,8 +164,8 @@ export const api = {
       cursor?: string;
     }
   ) => request<any>(withQuery("/ai/suggestions", query), { token }),
-  approveAiSuggestion: (token: string, id: string) =>
-    request<any>(`/ai/suggestions/${id}/approve`, { method: "POST", token, body: {} }),
+  approveAiSuggestion: (token: string, id: string, payload?: { dueDate?: string | null; assigneeIds?: string[] }) =>
+    request<any>(`/ai/suggestions/${id}/approve`, { method: "POST", token, body: payload ?? {} }),
   rejectAiSuggestion: (token: string, id: string) =>
     request<any>(`/ai/suggestions/${id}/reject`, { method: "POST", token, body: {} }),
   ignoreAiSuggestion: (token: string, id: string) =>

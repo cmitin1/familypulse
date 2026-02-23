@@ -60,11 +60,34 @@ router.get("/suggestions", async (req, res) => {
 
 async function setSuggestionStatus(req: HomeRequest, res: any, status: AiSuggestionStatus) {
   if (!aiGuard(req as HomeRequest, res)) return;
+  const approveOverrideSchema = z.object({
+    dueDate: z.string().datetime().nullable().optional(),
+    assigneeIds: z.array(z.string().min(1)).optional()
+  });
+  const parsedOverride = approveOverrideSchema.safeParse(req.body ?? {});
+  if (!parsedOverride.success) {
+    return res.status(400).json({ error: "Invalid payload", details: parsedOverride.error.flatten() });
+  }
   const updated = await suggestionService.setStatus({
     homeId: req.context.homeId,
     suggestionId: req.params.id,
     status,
-    approvedByUserId: req.user.id
+    approvedByUserId: req.user.id,
+    taskOverride:
+      status === AiSuggestionStatus.APPROVED
+        ? {
+            dueDate:
+              parsedOverride.data.dueDate !== undefined
+                ? parsedOverride.data.dueDate
+                  ? new Date(parsedOverride.data.dueDate)
+                  : null
+                : undefined,
+            assigneeIds:
+              parsedOverride.data.assigneeIds !== undefined
+                ? [...new Set(parsedOverride.data.assigneeIds)]
+                : undefined
+          }
+        : undefined
   });
   if (!updated) {
     return res.status(404).json({ error: "Suggestion not found" });
