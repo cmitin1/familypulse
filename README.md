@@ -13,7 +13,7 @@
 ## Архитектура
 
 - `backend` — REST API, авторизация Telegram, бизнес-логика задач/рутин/очков.
-- `web` — Telegram Mini App, экраны onboarding/today/tasks/routines/home.
+- `web` — Telegram Mini App, экраны onboarding/today/tasks/routines/home/ai.
 - `web/app/api/proxy/[...path]/route.ts` — server-side proxy (web -> backend), чтобы клиент не бил напрямую в API-домен.
 - `db` — Postgres.
 - `caddy` — HTTPS прокси:
@@ -38,6 +38,10 @@
 - `TaskAssignee`
 - `Event`
 - `EventParticipant`
+- `TelegramMessage`
+- `AiChatConnection`
+- `AiExtractionRun`
+- `AiSuggestion`
 
 Обязательные уникальности:
 - `HomeMember(homeId, userId)`
@@ -46,6 +50,8 @@
 - `Streak(homeId, date)`
 - `ScoreEvent(homeId, userId, sourceType, sourceId)`
 - `ChatLink(homeId, telegramChatId)`
+- `TelegramMessage(telegramChatId, telegramMessageId)`
+- `AiChatConnection(homeId, telegramChatId)`
 
 ### 2) Auth и ACL
 
@@ -103,6 +109,14 @@
 - `POST /routine-instances/:id/done` (идемпотентно)
 - `GET /scoreboard?period=week|month`
 
+#### AI (MVP v1, safe mode)
+- `GET /ai/suggestions?status=&type=&limit=&cursor=`
+- `POST /ai/suggestions/:id/approve`
+- `POST /ai/suggestions/:id/reject`
+- `POST /ai/suggestions/:id/ignore`
+- `GET /ai/summary/today`
+- `GET /ai/summary/digest?hours=24`
+
 ### 4) Логика рутин и очков
 
 - Генерация инстансов рутин на дату в `/today`.
@@ -118,8 +132,17 @@
 - `/help`
 - `/invite`
 - `/link`
+- `/ai_on`
+- `/ai_off`
 - `/digest`
+- `/today`
+- `/ai_tasks`
 - callback `checkin:<homeId>:<dateYmd>`
+- входящие сообщения чата сохраняются в `TelegramMessage` (дедуп по `(telegramChatId, telegramMessageId)`).
+- `/link` привязывает чат к дому и оставляет AI выключенным по умолчанию.
+- `/ai_on` и `/ai_off` (owner, в группе) явно управляют AI-анализом чата.
+- `/today` возвращает компактную сводку по дому (tasks/routines/events + AI pending).
+- `/digest` возвращает краткую сводку за 24 часа с блоком “что обсуждали” и счетчиками AI suggestions.
 
 В `backend/src/scheduler.ts`:
 - cron каждую минуту
@@ -129,6 +152,27 @@
   - `09:00` (`REMINDER_MORNING_TIME`): задачи на сегодня (1 раз/день)
   - `19:00` (`REMINDER_EVENING_TIME`): просроченные + дедлайн завтра (1 раз/день)
   - `21:30` локального времени дома: отправка чек-ина с callback кнопкой (1 раз/день)
+- hourly AI analysis (safe mode): новые сообщения из `TelegramMessage` -> OpenRouter -> `AiExtractionRun` + `AiSuggestion` (статус `PENDING`).
+
+### 5.1) AI Native MVP v1 (safe mode)
+
+- AI-модуль изолирован в `backend/src/modules/ai`.
+- LLM не создаёт `Task/Event` напрямую.
+- OpenRouter extraction возвращает строгий JSON, который валидируется через `zod`.
+- Невалидный/ошибочный AI-run логируется в `AiExtractionRun(status=ERROR)` и не валит backend.
+- Feature flags:
+  - `AI_FEATURE_ENABLED`
+  - `AI_CHAT_ANALYSIS_ENABLED`
+  - `AI_CHAT_ANALYSIS_BATCH_LIMIT`
+  - `AI_CHAT_PROMPT_VERSION`
+  - `OPENROUTER_*`
+- API:
+  - `GET /ai/suggestions`
+  - `POST /ai/suggestions/:id/approve|reject|ignore`
+  - `GET /ai/summary/today`
+  - `GET /ai/summary/digest?hours=24`
+- Mini App: новый раздел `/ai` (AI Inbox) с действиями approve/reject/ignore.
+- Safe mode: после `/link` AI-анализ чата **выключен по умолчанию**, включается явно командой `/ai_on` (owner), выключение `/ai_off`.
 
 ### 6) Mini App UI
 
@@ -139,6 +183,27 @@
 - `Events`: отдельный раздел событий и карточка события с привязанными задачами.
 - `Routines`: создание (DAILY/WEEKLY, FIXED/ROTATE), toggle active.
 - `Home`: участники, инвайт, статус привязки группового чата, scoreboard.
+- `AI Inbox` (`/ai`): pending suggestions, действия статусов (подтвердить/отклонить/игнорировать), today-stats и ручное обновление.
+
+### 6.1) UI/UX стандартизация (light theme)
+
+- Добавлен краткий дизайн-спек: `web/UI-DESIGN-SPEC.md`.
+- Единые дизайн-токены через CSS vars/Tailwind в:
+  - `web/app/globals.css`
+  - `web/tailwind.config.ts`
+- Унифицированы базовые компоненты:
+  - `web/components/ui/button.tsx`
+  - `web/components/ui/input.tsx`
+  - `web/components/ui/card.tsx`
+  - `web/components/ui/badge.tsx`
+  - `web/components/ui/alert.tsx`
+  - `web/components/ui/table.tsx`
+  - `web/components/ui/tabs.tsx`
+  - `web/components/ui/sheet.tsx`
+  - `web/components/ui/skeleton.tsx`
+- Mobile-first и safe-area:
+  - tap-targets `~44px` (`h-11/min-h-11`) для интерактивных элементов,
+  - стабильные safe-area отступы в layout/nav/sheet.
 
 ### 7) Дополнительная устойчивость web
 
@@ -179,6 +244,14 @@ cp .env.example .env
 - `BACKEND_URL`
 - `CORS_ORIGIN`
 - `NEXT_PUBLIC_API_URL`
+- `AI_FEATURE_ENABLED`
+- `AI_CHAT_ANALYSIS_ENABLED`
+- `AI_CHAT_ANALYSIS_BATCH_LIMIT`
+- `AI_CHAT_PROMPT_VERSION`
+- `OPENROUTER_API_KEY`
+- `OPENROUTER_BASE_URL`
+- `OPENROUTER_MODEL_EXTRACT`
+- `OPENROUTER_MODEL_SUMMARY`
 
 ## Локальный запуск
 
@@ -198,12 +271,30 @@ ENABLE_BOT=false ENABLE_SCHEDULER=false docker compose up --build
 - Postgres: `localhost:5432`
 - Caddy: `:80`, `:443`
 
+## AI: pre-production safe checklist
+
+1. Проверить миграции и генерацию Prisma:
+   - `cd backend`
+   - `npx prisma migrate deploy`
+   - `npx prisma generate`
+2. Проверить базовые AI-тесты:
+   - `npm run test:ai`
+3. Включать AI только после ручной валидации:
+   - `AI_FEATURE_ENABLED=true`
+   - `AI_CHAT_ANALYSIS_ENABLED=true`
+   - `OPENROUTER_API_KEY=<key>`
+4. Для каждого чата AI включается явно через `/ai_on` (после `/link` по умолчанию выключен).
+5. Проверить rollback-план:
+   - мгновенно отключить AI: `AI_CHAT_ANALYSIS_ENABLED=false` (или `AI_FEATURE_ENABLED=false`)
+   - остальные backend/web/bot фичи должны продолжать работать штатно.
+
 ## Миграции и seed
 
 - Миграции:
   - `backend/prisma/migrations/0001_init/migration.sql`
   - `backend/prisma/migrations/20260223160000_calendar_and_deadline_notifications/migration.sql`
   - `backend/prisma/migrations/20260224113000_events_and_multi_assignees/migration.sql`
+  - `backend/prisma/migrations/20260223190000_ai_native_mvp_v1/migration.sql`
 - Seed: `backend/prisma/seed.ts`
   - создаёт 2 demo-пользователя (`telegramId=10001`, `10002`)
   - создаёт demo-дом и 1 demo-задачу
@@ -232,6 +323,11 @@ ENABLE_BOT=false ENABLE_SCHEDULER=false docker compose up --build
 - В календаре месяца отображаются цветные точки на датах с событиями.
 - Можно создать событие-диапазон и добавить к нему задачи из event details.
 - В `Routines` кнопка переключения на русском: `Отключить`/`Включить`.
+- AI Inbox (`/ai`) показывает pending suggestions и позволяет approve/reject/ignore.
+- AI Inbox (`/ai`) показывает pending suggestions и позволяет менять статусы карточек.
+- При выключенном `AI_FEATURE_ENABLED=false` backend/bot отвечают корректно без падения.
+- После `/link` AI для чата выключен, включается только через `/ai_on` (owner).
+- `/today` и `/digest` в боте отдают компактную сводку с AI-блоком.
 
 ## Структура проекта
 
@@ -241,10 +337,13 @@ ENABLE_BOT=false ENABLE_SCHEDULER=false docker compose up --build
 - `backend/src/services.ts` — idempotent points, routine generation, digest builder.
 - `backend/src/bot.ts` — команды бота и callback.
 - `backend/src/scheduler.ts` — планировщик дайджест/чек-ин.
+- `backend/src/modules/ai/*` — AI-модуль (schemas/services/routes/jobs).
 - `web/app/page.tsx` — главная (onboarding + today).
+- `web/app/ai/page.tsx` — AI Inbox.
 - `web/app/tasks/page.tsx` — задачи.
 - `web/app/routines/page.tsx` — рутины.
 - `web/app/home/page.tsx` — дом/инвайты/scoreboard.
 - `web/app/api/proxy/[...path]/route.ts` — proxy в backend.
+- `web/UI-DESIGN-SPEC.md` — короткий UI/UX дизайн-спек.
 - `docker-compose.yml` — оркестрация сервисов.
 - `Caddyfile` — HTTPS reverse proxy правила.
