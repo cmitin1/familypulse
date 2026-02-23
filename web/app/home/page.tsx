@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 import { api, getErrorMessage } from "@/lib/api";
 import { getToken } from "@/lib/session";
 
@@ -39,7 +40,10 @@ export default function HomePage() {
         <h1 className="page-title">Дом</h1>
         <p className="text-sm text-foreground">{home?.name || "Дом не выбран"}</p>
         <p className="text-sm text-muted-foreground">Часовой пояс: {home?.timezone || "—"}</p>
-        <p className="text-sm text-muted-foreground">Чат-группа: {home?.chatLinks?.length ? "Привязана" : "Сделайте /link в семейной группе"}</p>
+        <p className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+          Чат-группа:
+          {home?.chatLinks?.length ? <StatusIndicator kind="linked" /> : <StatusIndicator kind="unlinked" />}
+        </p>
         <p className="text-xs text-muted-foreground">
           Чтобы бот отправлял дайджесты в чат, откройте нужную группу и выполните команду `/link`.
         </p>

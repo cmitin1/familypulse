@@ -71,8 +71,8 @@ export function TaskEditorSheet({
             value={status}
             onChange={(e) => setStatus(e.target.value as "OPEN" | "DONE")}
           >
-            <option value="OPEN">Открыта</option>
-            <option value="DONE">Выполнена</option>
+            <option value="OPEN">○ Открыта</option>
+            <option value="DONE">✓ Выполнена</option>
           </select>
         </div>
         <Button

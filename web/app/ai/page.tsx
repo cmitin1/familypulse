@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Check, Clock3, X } from "lucide-react";
 import { BottomNav } from "@/components/nav";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -211,13 +212,16 @@ export default function AiInboxPage() {
                 ) : null}
                 <div className="grid grid-cols-3 gap-2">
                   <Button size="sm" onClick={() => updateStatus(item.id, "approve")}>
-                    ✅ Подтвердить
+                    <Check className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+                    Подтвердить
                   </Button>
                   <Button size="sm" variant="outline" onClick={() => updateStatus(item.id, "reject")}>
-                    ❌ Отклонить
+                    <X className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+                    Отклонить
                   </Button>
                   <Button size="sm" variant="ghost" onClick={() => updateStatus(item.id, "ignore")}>
-                    ⏳ Игнорировать
+                    <Clock3 className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+                    Игнорировать
                   </Button>
                 </div>
               </div>

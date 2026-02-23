@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api, getErrorMessage } from "@/lib/api";
 import { formatDateTime } from "@/lib/datetime";
@@ -224,7 +225,9 @@ export default function CalendarPage() {
             <div key={feed.id} className="space-y-2 rounded-lg border border-border p-3">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-medium">{feed.title}</p>
-                <Badge variant={feed.isEnabled ? "success" : "outline"}>{feed.isEnabled ? "включен" : "отключен"}</Badge>
+                <Badge variant={feed.isEnabled ? "success" : "outline"} className="gap-1">
+                  <StatusIndicator kind={feed.isEnabled ? "enabled" : "disabled"} />
+                </Badge>
               </div>
               <p className="text-xs text-muted-foreground break-all">{feed.icsUrl}</p>
               <div className="grid grid-cols-3 gap-2">
@@ -237,6 +240,7 @@ export default function CalendarPage() {
                     await load(token);
                   }}
                 >
+                  <StatusIndicator kind={feed.isEnabled ? "enabled" : "disabled"} />
                   {feed.isEnabled ? "Отключить" : "Включить"}
                 </Button>
                 <Button

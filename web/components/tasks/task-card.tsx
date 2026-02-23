@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { AlertTriangle, CalendarX2, CheckCircle2, Circle, Clock3 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -14,6 +15,7 @@ type Member = {
 type Task = {
   id: string;
   title: string;
+  description?: string | null;
   status: "OPEN" | "DONE";
   dueDate?: string | null;
   assigneeId?: string | null;
@@ -35,11 +37,17 @@ function dueText(diff: number | null) {
   return `Осталось ${diff} дн.`;
 }
 
-function getInitials(name: string) {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "??";
-  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
-  return `${parts[0]![0] ?? ""}${parts[1]![0] ?? ""}`.toUpperCase();
+function DueStatusIcon({ diff }: { diff: number | null }) {
+  if (diff === null) {
+    return <CalendarX2 className="h-3.5 w-3.5" aria-hidden="true" />;
+  }
+  if (diff < 0) {
+    return <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />;
+  }
+  if (diff === 0) {
+    return <Clock3 className="h-3.5 w-3.5" aria-hidden="true" />;
+  }
+  return <Circle className="h-3.5 w-3.5" aria-hidden="true" />;
 }
 
 export function TaskCard({
@@ -64,7 +72,6 @@ export function TaskCard({
       : assigneeUsers.length === 1
         ? assigneeUsers[0]?.firstName || assigneeUsers[0]?.username || "Участник"
         : `${assigneeUsers[0]?.firstName || assigneeUsers[0]?.username || "Участник"} +${assigneeUsers.length - 1}`;
-  const initials = getInitials(assigneeLabel);
   const isDone = task.status === "DONE";
 
   return (
@@ -78,19 +85,16 @@ export function TaskCard({
           }}
           className="h-4 w-4"
         />
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold text-foreground">
-            {initials}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className={`truncate text-sm font-semibold ${isDone ? "text-muted-foreground line-through" : "text-foreground"}`}>{task.title}</p>
-            <p className="truncate text-xs text-muted-foreground">
-              {assigneeLabel} • {dueText(diff)} • {formatDateTime(task.dueDate ?? null, timezone)}
-            </p>
-          </div>
+        <div className="min-w-0 flex-1">
+          <p className={`truncate text-sm font-semibold ${isDone ? "text-muted-foreground line-through" : "text-foreground"}`}>{task.title}</p>
+          {task.description ? <p className="line-clamp-2 text-xs text-muted-foreground">{task.description}</p> : null}
+          <p className="truncate text-xs text-muted-foreground">
+            {assigneeLabel} • {formatDateTime(task.dueDate ?? null, timezone)}
+          </p>
         </div>
-        <Badge variant={dueBadgeVariant(diff)} className="shrink-0">
-          {isDone ? "выполнено" : "открыто"}
+        <Badge variant={dueBadgeVariant(diff)} className="shrink-0 gap-1">
+          {isDone ? <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> : <DueStatusIcon diff={diff} />}
+          <span className={isDone ? "sr-only" : "hidden sm:inline"}>{isDone ? "выполнено" : dueText(diff)}</span>
         </Badge>
         <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
           Ред.

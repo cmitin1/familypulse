@@ -14,6 +14,7 @@ import { TaskCard } from "@/components/tasks/task-card";
 import { TaskEditorSheet } from "@/components/tasks/task-editor-sheet";
 import { TasksSummaryTable } from "@/components/tasks/tasks-summary-table";
 import { Badge } from "@/components/ui/badge";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 
 declare global {
   interface Window {
@@ -34,6 +35,7 @@ export default function TodayPage() {
   const [homeName, setHomeName] = useState("Наш дом");
   const [notice, setNotice] = useState("");
   const [tasks, setTasks] = useState<any[]>([]);
+  const [backlogTasks, setBacklogTasks] = useState<any[]>([]);
   const [summary, setSummary] = useState<any[]>([]);
   const [taskFilter, setTaskFilter] = useState<"overdue" | "today" | "week" | "noDueDate">("today");
   const [editorOpen, setEditorOpen] = useState(false);
@@ -151,17 +153,21 @@ export default function TodayPage() {
         setHome(currentHome);
         setToday(null);
         setTasks([]);
+        setBacklogTasks([]);
         setSummary([]);
         return;
       }
-      const [t, taskRows, summaryRows] = await Promise.all([
+      const [t, taskRows, summaryRows, openRows] = await Promise.all([
         api.getToday(actualToken, scope),
         api.getTasks(actualToken, tasksQuery),
-        api.getTasksSummaryByAssignee(actualToken, from, to)
+        api.getTasksSummaryByAssignee(actualToken, from, to),
+        api.getTasks(actualToken, { scope, status: "open" as const })
       ]);
       setHome(currentHome);
       setToday(t);
       setTasks(taskFilter === "today" ? (t?.tasks ?? []) : taskRows);
+      const todayIds = new Set((t?.tasks ?? []).map((task: any) => task.id));
+      setBacklogTasks((openRows ?? []).filter((task: any) => !todayIds.has(task.id)));
       setSummary(summaryRows);
     })
       .then(() => {
@@ -196,17 +202,21 @@ export default function TodayPage() {
           setHome(currentHome);
           setToday(null);
           setTasks([]);
+          setBacklogTasks([]);
           setSummary([]);
           return;
         }
-        const [t, taskRows, summaryRows] = await Promise.all([
+        const [t, taskRows, summaryRows, openRows] = await Promise.all([
           api.getToday(actualToken, scope),
           api.getTasks(actualToken, tasksQuery),
-          api.getTasksSummaryByAssignee(actualToken, from, to)
+          api.getTasksSummaryByAssignee(actualToken, from, to),
+          api.getTasks(actualToken, { scope, status: "open" as const })
         ]);
         setHome(currentHome);
         setToday(t);
         setTasks(taskFilter === "today" ? (t?.tasks ?? []) : taskRows);
+        const todayIds = new Set((t?.tasks ?? []).map((task: any) => task.id));
+        setBacklogTasks((openRows ?? []).filter((task: any) => !todayIds.has(task.id)));
         setSummary(summaryRows);
       });
       setError("");
@@ -428,7 +438,9 @@ export default function TodayPage() {
                     </p>
                   </div>
                   {item.isDone ? (
-                    <Badge variant="success">выполнено</Badge>
+                    <Badge variant="success" className="gap-1">
+                      <StatusIndicator kind="done" />
+                    </Badge>
                   ) : (
                     <Button
                       size="sm"
@@ -449,9 +461,37 @@ export default function TodayPage() {
             )}
           </Card>
           <Card className="space-y-2">
-            <p className="text-sm text-muted-foreground">
-              Прогресс: {done}/{total} • Выполнено: {progress}% • Очки: {today?.pointsToday ?? 0} • Стрик:{" "}
-              {today?.streakClosed ? "закрыт" : "открыт"}
+            <h2 className="text-base font-semibold">Остальные задачи (не на сегодня)</h2>
+            {backlogTasks.length === 0 ? (
+              <p className="empty-state">Нет дополнительных открытых задач.</p>
+            ) : (
+              backlogTasks.map((task: any) => (
+                <TaskCard
+                  key={task.id}
+                  task={task}
+                  members={home?.members ?? []}
+                  timezone={home?.timezone ?? "UTC"}
+                  onDone={async (id) => {
+                    await api.doneTask(token, id);
+                    await reload();
+                  }}
+                  onUpdate={async (id, payload) => {
+                    await api.updateTask(token, id, payload);
+                    await reload();
+                  }}
+                />
+              ))
+            )}
+          </Card>
+          <Card className="space-y-2">
+            <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+              <span>Прогресс: {done}/{total}</span>
+              <span>Выполнено: {progress}%</span>
+              <span>Очки: {today?.pointsToday ?? 0}</span>
+              <span className="inline-flex items-center gap-1">
+                Стрик:
+                {today?.streakClosed ? <StatusIndicator kind="closed" /> : <StatusIndicator kind="open" />}
+              </span>
             </p>
           </Card>
         </>

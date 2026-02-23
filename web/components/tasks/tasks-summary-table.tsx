@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { AlertTriangle, Check, Circle, Clock3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Table, TableCell, TableHead } from "@/components/ui/table";
@@ -65,10 +66,30 @@ export function TasksSummaryTable({
         <thead>
           <tr className="border-b border-border">
             <TableHead>Участник</TableHead>
-            <TableHead>Открыто</TableHead>
-            <TableHead>Проср.</TableHead>
-            <TableHead>Скоро</TableHead>
-            <TableHead>Сделано</TableHead>
+            <TableHead>
+              <span className="inline-flex items-center gap-1">
+                <Circle className="h-3.5 w-3.5" aria-hidden="true" />
+                <span className="sr-only">Открыто</span>
+              </span>
+            </TableHead>
+            <TableHead>
+              <span className="inline-flex items-center gap-1">
+                <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
+                <span className="sr-only">Просрочено</span>
+              </span>
+            </TableHead>
+            <TableHead>
+              <span className="inline-flex items-center gap-1">
+                <Clock3 className="h-3.5 w-3.5" aria-hidden="true" />
+                <span className="sr-only">Скоро срок</span>
+              </span>
+            </TableHead>
+            <TableHead>
+              <span className="inline-flex items-center gap-1">
+                <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                <span className="sr-only">Сделано</span>
+              </span>
+            </TableHead>
           </tr>
         </thead>
         <tbody>

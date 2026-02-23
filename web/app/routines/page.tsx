@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { BottomNav } from "@/components/nav";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 import { api, getErrorMessage } from "@/lib/api";
 import { getToken } from "@/lib/session";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -152,7 +154,12 @@ export default function RoutinesPage() {
           routines.map((routine) => (
             <div key={routine.id} className="flex items-center justify-between rounded-lg border border-border p-3 text-sm">
               <div>
-                <p className="font-medium">{routine.title}</p>
+                <div className="flex items-center gap-2">
+                  <p className="font-medium">{routine.title}</p>
+                  <Badge variant={routine.isActive ? "success" : "outline"} className="gap-1">
+                    <StatusIndicator kind={routine.isActive ? "enabled" : "disabled"} />
+                  </Badge>
+                </div>
                 <p className="text-xs text-muted-foreground">
                   {routine.scheduleType}
                   {routine.scheduleType === "WEEKLY" ? ` (${(routine.daysOfWeek ?? []).join(",")})` : ""}
@@ -170,6 +177,7 @@ export default function RoutinesPage() {
                   }
                 }}
               >
+                <StatusIndicator kind={routine.isActive ? "enabled" : "disabled"} />
                 {routine.isActive ? "Отключить" : "Включить"}
               </Button>
             </div>
