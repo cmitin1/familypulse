@@ -26,6 +26,7 @@ export default function TodayPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [home, setHome] = useState<any>(null);
+  const [homes, setHomes] = useState<any[]>([]);
   const [today, setToday] = useState<any>(null);
   const [scope, setScope] = useState<"mine" | "all">("mine");
   const [joinCode, setJoinCode] = useState("");
@@ -65,6 +66,7 @@ export default function TodayPage() {
     const resp = await api.authTelegram(initData);
     setToken(resp.token);
     setTokenState(resp.token);
+    setHomes(resp.homes ?? []);
     setStatus("OK");
     setError("");
     return resp.token as string;
@@ -109,6 +111,7 @@ export default function TodayPage() {
           .then((resp) => {
             setToken(resp.token);
             setTokenState(resp.token);
+            setHomes(resp.homes ?? []);
             setStatus("OK");
             setError("");
           })
@@ -141,19 +144,26 @@ export default function TodayPage() {
           : taskFilter === "week"
             ? { scope, from, to }
             : { scope, noDueDate: true };
-    withReAuth((actualToken) =>
-      Promise.all([
-        api.getCurrentHome(actualToken),
+    withReAuth(async (actualToken) => {
+      const currentHome = await api.getCurrentHome(actualToken);
+      if (!currentHome?.id) {
+        setHome(currentHome);
+        setToday(null);
+        setTasks([]);
+        setSummary([]);
+        return;
+      }
+      const [t, taskRows, summaryRows] = await Promise.all([
         api.getToday(actualToken, scope),
         api.getTasks(actualToken, tasksQuery),
         api.getTasksSummaryByAssignee(actualToken, from, to)
-      ])
-    )
-      .then(([h, t, taskRows, summaryRows]) => {
-        setHome(h);
-        setToday(t);
-        setTasks(taskRows);
-        setSummary(summaryRows);
+      ]);
+      setHome(currentHome);
+      setToday(t);
+      setTasks(taskRows);
+      setSummary(summaryRows);
+    })
+      .then(() => {
         setStatus("OK");
         setError("");
       })
@@ -179,18 +189,25 @@ export default function TodayPage() {
             : taskFilter === "week"
               ? { scope, from, to }
               : { scope, noDueDate: true };
-      const [h, t, taskRows, summaryRows] = await withReAuth((actualToken) =>
-        Promise.all([
-          api.getCurrentHome(actualToken),
+      await withReAuth(async (actualToken) => {
+        const currentHome = await api.getCurrentHome(actualToken);
+        if (!currentHome?.id) {
+          setHome(currentHome);
+          setToday(null);
+          setTasks([]);
+          setSummary([]);
+          return;
+        }
+        const [t, taskRows, summaryRows] = await Promise.all([
           api.getToday(actualToken, scope),
           api.getTasks(actualToken, tasksQuery),
           api.getTasksSummaryByAssignee(actualToken, from, to)
-        ])
-      );
-      setHome(h);
-      setToday(t);
-      setTasks(taskRows);
-      setSummary(summaryRows);
+        ]);
+        setHome(currentHome);
+        setToday(t);
+        setTasks(taskRows);
+        setSummary(summaryRows);
+      });
       setError("");
     } catch (err) {
       setError(getErrorMessage(err));
@@ -246,6 +263,30 @@ export default function TodayPage() {
             Войти по коду
           </Button>
         </Card>
+        {(homes ?? []).length > 0 ? (
+          <Card className="space-y-3">
+            <p className="text-sm text-slate-600">Или выберите дом для входа:</p>
+            <div className="space-y-2">
+              {homes.map((h: any) => (
+                <Button
+                  key={h.id}
+                  variant="outline"
+                  className="w-full justify-start"
+                  onClick={async () => {
+                    try {
+                      await withReAuth((actualToken) => api.switchHome(actualToken, h.id));
+                      await reload();
+                    } catch (err) {
+                      setError(getErrorMessage(err));
+                    }
+                  }}
+                >
+                  {h.name}
+                </Button>
+              ))}
+            </div>
+          </Card>
+        ) : null}
       </div>
     );
   }

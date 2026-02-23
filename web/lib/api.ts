@@ -89,6 +89,8 @@ export const api = {
   authTelegram: (initData: string) => request<any>("/auth/telegram", { method: "POST", body: { initData } }),
   createHome: (token: string, name: string, timezone?: string) =>
     request<any>("/homes", { method: "POST", token, body: { name, timezone } }),
+  switchHome: (token: string, homeId: string) =>
+    request<any>("/homes/switch", { method: "POST", token, body: { homeId } }),
   joinInvite: (token: string, code: string) =>
     request<any>("/invites/join", { method: "POST", token, body: { code } }),
   leaveCurrentHome: (token: string) => request<any>("/homes/leave-current", { method: "POST", token, body: {} }),

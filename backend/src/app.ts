@@ -67,10 +67,9 @@ app.post("/auth/telegram", async (req, res) => {
       include: { home: true },
       orderBy: { createdAt: "asc" }
     });
-    const activeHomeId = user.activeHomeId ?? memberships[0]?.homeId ?? null;
-    if (activeHomeId !== user.activeHomeId) {
-      await prisma.user.update({ where: { id: user.id }, data: { activeHomeId } });
-    }
+    // Do not auto-select a home when activeHomeId is null.
+    // This lets the user explicitly choose a home via UI button.
+    const activeHomeId = user.activeHomeId ?? null;
     const token = signJwt({ userId: user.id });
     return res.json({
       token,
