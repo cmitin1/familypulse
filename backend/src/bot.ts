@@ -8,6 +8,35 @@ import { ensureAiChatConnection, persistTelegramIncomingMessage } from "./module
 
 let botInstance: Telegraf | null = null;
 
+const TELEGRAM_COMMANDS = [
+  { command: "start", description: "Запуск бота и ссылка на Mini App" },
+  { command: "app", description: "Открыть FamilyPulse Mini App" },
+  { command: "help", description: "Список доступных команд" },
+  { command: "invite", description: "Создать инвайт в дом (owner)" },
+  { command: "link", description: "Привязать текущую группу к дому" },
+  { command: "ai_on", description: "Включить AI-анализ чата (owner)" },
+  { command: "ai_off", description: "Выключить AI-анализ чата (owner)" },
+  { command: "today", description: "Сводка на сегодня" },
+  { command: "digest", description: "Краткая сводка за 24 часа" },
+  { command: "ai_tasks", description: "Показать AI-кандидаты (owner)" }
+];
+
+async function registerTelegramCommands(bot: Telegraf) {
+  try {
+    await bot.telegram.setMyCommands(TELEGRAM_COMMANDS, { scope: { type: "all_private_chats" } });
+    console.info("[BOT] Команды зарегистрированы для private chats");
+  } catch (error) {
+    console.error("[BOT] Ошибка регистрации команд для private chats", error instanceof Error ? error.message : error);
+  }
+
+  try {
+    await bot.telegram.setMyCommands(TELEGRAM_COMMANDS, { scope: { type: "all_group_chats" } });
+    console.info("[BOT] Команды зарегистрированы для group chats");
+  } catch (error) {
+    console.error("[BOT] Ошибка регистрации команд для group chats", error instanceof Error ? error.message : error);
+  }
+}
+
 function miniAppDirectUrl(payload: string) {
   if (!config.telegramBotUsername) {
     throw new Error("TELEGRAM_BOT_USERNAME is required to generate mini-app links");
@@ -319,6 +348,7 @@ export function startBot() {
   }
   const bot = new Telegraf(config.telegramBotToken);
   setupBot(bot);
+  void registerTelegramCommands(bot);
   bot.launch();
   botInstance = bot;
   return bot;
