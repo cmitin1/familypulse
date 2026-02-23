@@ -31,7 +31,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body>
-        <main className="mx-auto min-h-screen max-w-xl p-4 pb-20">{children}</main>
+        <main className="mx-auto min-h-screen max-w-xl px-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))] pt-4">
+          {children}
+        </main>
       </body>
     </html>
   );

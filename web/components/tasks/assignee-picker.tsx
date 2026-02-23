@@ -14,7 +14,11 @@ export function AssigneePicker({
   onChange: (value: string) => void;
 }) {
   return (
-    <select className="h-10 w-full rounded-md border border-border px-3 text-sm" value={value} onChange={(e) => onChange(e.target.value)}>
+    <select
+      className="h-11 w-full rounded-lg border border-input bg-card px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    >
       <option value="">Без исполнителя</option>
       {members.map((member) => (
         <option key={member.user.id} value={member.user.id}>

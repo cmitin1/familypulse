@@ -29,7 +29,7 @@ export function Tabs({
 }
 
 export function TabsList({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <div className={cn("grid grid-cols-2 rounded-lg border border-border bg-white p-1", className)}>{children}</div>;
+  return <div className={cn("grid grid-cols-2 rounded-lg border border-border bg-secondary p-1", className)}>{children}</div>;
 }
 
 export function TabsTrigger({ value, children }: { value: string; children: React.ReactNode }) {
@@ -41,8 +41,8 @@ export function TabsTrigger({ value, children }: { value: string; children: Reac
       type="button"
       onClick={() => ctx.setValue(value)}
       className={cn(
-        "h-9 rounded-md text-sm font-medium",
-        active ? "bg-slate-900 text-white" : "bg-white text-slate-700"
+        "h-11 rounded-md text-sm font-medium transition-colors",
+        active ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
       )}
     >
       {children}

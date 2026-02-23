@@ -15,14 +15,14 @@ const items = [
 export function BottomNav() {
   const pathname = usePathname();
   return (
-    <nav className="sticky bottom-3 mt-4 grid grid-cols-5 gap-2 rounded-lg border border-border bg-white/90 p-2 backdrop-blur">
+    <nav className="sticky bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-40 mt-4 grid grid-cols-5 gap-1 rounded-xl border border-border bg-card/95 p-1.5 shadow-sm backdrop-blur">
       {items.map((item) => (
         <Link
           key={item.href}
           href={item.href}
           className={cn(
-            "rounded-md border border-border bg-white px-2 py-2 text-center text-xs",
-            pathname === item.href && "bg-slate-900 text-white"
+            "flex min-h-11 items-center justify-center rounded-lg px-2 text-center text-xs font-medium text-muted-foreground transition-colors",
+            pathname === item.href ? "bg-primary text-primary-foreground" : "hover:bg-muted hover:text-foreground"
           )}
         >
           {item.label}

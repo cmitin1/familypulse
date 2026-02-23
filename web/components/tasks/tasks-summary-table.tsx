@@ -53,23 +53,26 @@ export function TasksSummaryTable({
 
   return (
     <Card className="space-y-3">
-      <h2 className="font-medium">Сводка по ответственным</h2>
+      <div>
+        <h2 className="text-base font-semibold text-foreground">Сводка по ответственным</h2>
+        <p className="text-sm text-muted-foreground">Нажмите на имя, чтобы раскрыть список задач участника.</p>
+      </div>
       <Table>
         <thead>
-          <tr className="border-b">
+          <tr className="border-b border-border">
             <TableHead>Участник</TableHead>
-            <TableHead>Open</TableHead>
-            <TableHead>Overdue</TableHead>
-            <TableHead>DueSoon</TableHead>
-            <TableHead>DoneToday</TableHead>
+            <TableHead>Открыто</TableHead>
+            <TableHead>Проср.</TableHead>
+            <TableHead>Скоро</TableHead>
+            <TableHead>Сделано</TableHead>
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.userId} className="border-b">
+            <tr key={row.userId} className="border-b border-border/80 last:border-b-0">
               <TableCell>
                 <Button
-                  variant="outline"
+                  variant={expandedUserId === row.userId ? "secondary" : "outline"}
                   size="sm"
                   onClick={() => setExpandedUserId((prev) => (prev === row.userId ? null : row.userId))}
                 >
@@ -87,7 +90,7 @@ export function TasksSummaryTable({
       {expandedUserId ? (
         <div className="space-y-2">
           {expandedTasks.length === 0 ? (
-            <p className="text-sm text-slate-500">У этого участника пока нет задач по выбранным фильтрам.</p>
+            <p className="empty-state">У этого участника пока нет задач по выбранным фильтрам.</p>
           ) : (
             expandedTasks.map((task) => (
               <TaskCard

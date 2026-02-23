@@ -6,9 +6,72 @@
   --tg-bg: #f8fafc;
   --tg-text: #0f172a;
   --tg-secondary-bg: #ffffff;
+  --background: 210 40% 98%;
+  --foreground: 222 47% 11%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 11%;
+  --primary: 222 47% 11%;
+  --primary-foreground: 210 40% 98%;
+  --secondary: 210 40% 96%;
+  --secondary-foreground: 222 47% 11%;
+  --muted: 210 40% 96%;
+  --muted-foreground: 215 16% 35%;
+  --accent: 213 94% 94%;
+  --accent-foreground: 224 64% 22%;
+  --border: 214 32% 90%;
+  --input: 214 32% 90%;
+  --ring: 221 83% 53%;
+  --success: 142 76% 30%;
+  --success-foreground: 0 0% 100%;
+  --warning: 38 92% 40%;
+  --warning-foreground: 0 0% 100%;
+  --danger: 0 72% 46%;
+  --danger-foreground: 0 0% 100%;
 }
 
 body {
-  background: linear-gradient(180deg, var(--tg-bg) 0%, color-mix(in srgb, var(--tg-bg) 85%, #e0e7ff) 100%);
-  color: var(--tg-text);
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-feature-settings: "ss01" 1;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body {
+    @apply min-h-screen;
+  }
+
+  body {
+    @apply antialiased;
+  }
+}
+
+@layer components {
+  .page-shell {
+    @apply space-y-4 pb-2;
+  }
+
+  .page-header {
+    @apply flex items-start justify-between gap-3;
+  }
+
+  .page-title {
+    @apply text-xl font-semibold tracking-tight text-foreground;
+  }
+
+  .page-subtitle {
+    @apply text-sm text-muted-foreground;
+  }
+
+  .empty-state {
+    @apply rounded-lg border border-dashed border-border bg-muted/60 p-4 text-sm text-muted-foreground;
+  }
+
+  .field-label {
+    @apply text-sm font-medium text-foreground;
+  }
 }

@@ -12,7 +12,7 @@ export function DueDatePicker({
   return (
     <input
       type="datetime-local"
-      className="h-10 w-full rounded-md border border-border px-3 text-sm"
+      className="h-11 w-full rounded-lg border border-input bg-card px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
       value={toInputDateTimeValue(value)}
       onChange={(e) => onChange(fromInputDateTimeValue(e.target.value))}
     />

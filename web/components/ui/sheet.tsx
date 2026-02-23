@@ -15,8 +15,8 @@ export function Sheet({
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50">
-      <button type="button" className="absolute inset-0 bg-black/30" onClick={() => onOpenChange(false)} />
-      <div className="absolute inset-x-0 bottom-0 max-h-[85vh] overflow-auto rounded-t-xl border border-border bg-white p-4 shadow-lg">
+      <button type="button" className="absolute inset-0 bg-black/35" onClick={() => onOpenChange(false)} />
+      <div className="absolute inset-x-0 bottom-0 max-h-[88vh] overflow-auto rounded-t-2xl border border-border bg-card p-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-lg">
         {children}
       </div>
     </div>

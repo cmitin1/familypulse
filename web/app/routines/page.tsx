@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
 import { api, getErrorMessage } from "@/lib/api";
 import { getToken } from "@/lib/session";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const weekDays = [
   { label: "Вс", value: 0 },
@@ -57,17 +58,20 @@ export default function RoutinesPage() {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="page-shell">
       {error ? <Alert variant="error">{error}</Alert> : null}
       <Card className="space-y-3">
-        <h1 className="text-lg font-semibold">Routines</h1>
-        <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="New routine title" />
+        <h1 className="page-title">Рутины</h1>
+        <div className="space-y-1.5">
+          <p className="field-label">Название рутины</p>
+          <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Например: вечерняя уборка" />
+        </div>
         <div className="grid grid-cols-2 gap-2">
           <Button variant={scheduleType === "DAILY" ? "default" : "outline"} onClick={() => setScheduleType("DAILY")}>
-            DAILY
+            Каждый день
           </Button>
           <Button variant={scheduleType === "WEEKLY" ? "default" : "outline"} onClick={() => setScheduleType("WEEKLY")}>
-            WEEKLY
+            По дням недели
           </Button>
         </div>
         {scheduleType === "WEEKLY" ? (
@@ -86,15 +90,15 @@ export default function RoutinesPage() {
         ) : null}
         <div className="grid grid-cols-2 gap-2">
           <Button variant={assigneeMode === "ROTATE" ? "default" : "outline"} onClick={() => setAssigneeMode("ROTATE")}>
-            ROTATE
+            По очереди
           </Button>
           <Button variant={assigneeMode === "FIXED" ? "default" : "outline"} onClick={() => setAssigneeMode("FIXED")}>
-            FIXED
+            Фиксированный
           </Button>
         </div>
         {assigneeMode === "FIXED" ? (
           <select
-            className="h-10 w-full rounded-md border border-border px-3 text-sm"
+            className="h-11 w-full rounded-lg border border-input bg-card px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             value={fixedAssigneeId}
             onChange={(e) => setFixedAssigneeId(e.target.value)}
           >
@@ -127,20 +131,29 @@ export default function RoutinesPage() {
             }
           }}
         >
-          Create routine
+          Создать рутину
         </Button>
       </Card>
       <Card className="space-y-2">
         {loading ? (
-          <p className="text-sm text-slate-500">Загрузка рутин...</p>
+          <div className="space-y-2">
+            <Skeleton className="h-5 w-32" />
+            <Skeleton className="h-20 w-full" />
+            <Skeleton className="h-20 w-full" />
+          </div>
         ) : routines.length === 0 ? (
-          <p className="rounded-md border border-dashed p-3 text-sm text-slate-500">Нет рутин — добавьте первую</p>
+          <div className="space-y-3 rounded-lg border border-dashed border-border bg-muted/50 p-4">
+            <p className="text-sm text-muted-foreground">Нет рутин — добавьте первую.</p>
+            <Button variant="outline" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>
+              Создать рутину
+            </Button>
+          </div>
         ) : (
           routines.map((routine) => (
-            <div key={routine.id} className="flex items-center justify-between rounded border p-2 text-sm">
+            <div key={routine.id} className="flex items-center justify-between rounded-lg border border-border p-3 text-sm">
               <div>
                 <p className="font-medium">{routine.title}</p>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-muted-foreground">
                   {routine.scheduleType}
                   {routine.scheduleType === "WEEKLY" ? ` (${(routine.daysOfWeek ?? []).join(",")})` : ""}
                 </p>

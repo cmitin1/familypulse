@@ -70,17 +70,17 @@ export default function CalendarPage() {
   const dayTasks = tasksDue.filter((task) => task.dueDate && ymd(new Date(task.dueDate)) === selectedYmd);
 
   return (
-    <div className="space-y-3">
+    <div className="page-shell">
       {error ? <Alert variant="error">{error}</Alert> : null}
       <Card className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h1 className="text-lg font-semibold">Календарь</h1>
+        <div className="page-header">
+          <h1 className="page-title">Календарь</h1>
           <Badge variant="outline">{home?.timezone || "UTC"}</Badge>
         </div>
         <Tabs value={view} onValueChange={(v) => setView(v as "month" | "agenda")}>
           <TabsList>
-            <TabsTrigger value="month">Month</TabsTrigger>
-            <TabsTrigger value="agenda">Agenda</TabsTrigger>
+            <TabsTrigger value="month">Месяц</TabsTrigger>
+            <TabsTrigger value="agenda">Повестка</TabsTrigger>
           </TabsList>
           <TabsContent value="month">
             <div className="flex items-center justify-between pb-2">
@@ -94,7 +94,7 @@ export default function CalendarPage() {
                 →
               </Button>
             </div>
-            <div className="grid grid-cols-7 gap-1 text-center text-xs text-slate-500">
+            <div className="grid grid-cols-7 gap-1 text-center text-xs text-muted-foreground">
               {["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"].map((w) => (
                 <div key={w}>{w}</div>
               ))}
@@ -111,11 +111,11 @@ export default function CalendarPage() {
                   <button
                     type="button"
                     key={key}
-                    className={`rounded-md border p-2 text-left ${key === selectedYmd ? "border-slate-900" : "border-border"}`}
+                    className={`rounded-lg border p-2 text-left ${key === selectedYmd ? "border-primary bg-secondary" : "border-border bg-card"}`}
                     onClick={() => setSelectedDate(day)}
                   >
-                    <p className="text-xs">{day.getDate()}</p>
-                    <p className="text-[10px] text-slate-500">E:{count} T:{taskCount}</p>
+                    <p className="text-xs font-medium">{day.getDate()}</p>
+                    <p className="text-[10px] text-muted-foreground">E:{count} T:{taskCount}</p>
                   </button>
                 );
               })}
@@ -124,13 +124,13 @@ export default function CalendarPage() {
           <TabsContent value="agenda">
             <div className="space-y-2">
               {events.length === 0 ? (
-                <p className="text-sm text-slate-500">Нет событий в выбранном диапазоне.</p>
+                <p className="empty-state">Нет событий в выбранном диапазоне.</p>
               ) : (
                 events.map((event) => (
-                  <div key={event.id} className="rounded-md border p-2">
+                  <div key={event.id} className="rounded-lg border border-border p-3">
                     <p className="text-sm font-medium">{event.title}</p>
-                    <p className="text-xs text-slate-500">{formatDateTime(event.startAt, home?.timezone || "UTC")}</p>
-                    <p className="text-xs text-slate-500">{event.feed?.title}</p>
+                    <p className="text-xs text-muted-foreground">{formatDateTime(event.startAt, home?.timezone || "UTC")}</p>
+                    <p className="text-xs text-muted-foreground">{event.feed?.title}</p>
                   </div>
                 ))
               )}
@@ -140,28 +140,28 @@ export default function CalendarPage() {
       </Card>
 
       <Card className="space-y-2">
-        <h2 className="font-medium">На дату: {selectedYmd}</h2>
-        <p className="text-xs text-slate-500">События и задачи с дедлайном</p>
+        <h2 className="text-base font-semibold">На дату: {selectedYmd}</h2>
+        <p className="text-xs text-muted-foreground">События и задачи с дедлайном</p>
         <Separator />
         {dayEvents.map((event) => (
-          <div key={event.id} className="rounded-md border p-2">
+          <div key={event.id} className="rounded-lg border border-border p-3">
             <p className="text-sm font-medium">{event.title}</p>
-            <p className="text-xs text-slate-500">{formatDateTime(event.startAt, home?.timezone || "UTC")}</p>
+            <p className="text-xs text-muted-foreground">{formatDateTime(event.startAt, home?.timezone || "UTC")}</p>
           </div>
         ))}
         {dayTasks.map((task) => (
-          <div key={task.id} className="rounded-md border border-amber-200 bg-amber-50 p-2">
+          <div key={task.id} className="rounded-lg border border-warning/30 bg-warning/10 p-3">
             <p className="text-sm font-medium">{task.title}</p>
-            <p className="text-xs text-slate-500">Задача с дедлайном</p>
+            <p className="text-xs text-muted-foreground">Задача с дедлайном</p>
           </div>
         ))}
         {dayEvents.length === 0 && dayTasks.length === 0 ? (
-          <p className="text-sm text-slate-500">Пусто на выбранную дату.</p>
+          <p className="empty-state">Пусто на выбранную дату.</p>
         ) : null}
       </Card>
 
       <Card className="space-y-2">
-        <h2 className="font-medium">Подключить календарь (ICS)</h2>
+        <h2 className="text-base font-semibold">Подключить календарь (ICS)</h2>
         <Input placeholder="Название feed" value={title} onChange={(e) => setTitle(e.target.value)} />
         <Input placeholder="https://...ics" value={icsUrl} onChange={(e) => setIcsUrl(e.target.value)} />
         <Button
@@ -182,17 +182,17 @@ export default function CalendarPage() {
       </Card>
 
       <Card className="space-y-2">
-        <h2 className="font-medium">Feeds</h2>
+        <h2 className="text-base font-semibold">Feeds</h2>
         {feeds.length === 0 ? (
-          <p className="text-sm text-slate-500">Пока нет подключенных календарей.</p>
+          <p className="empty-state">Пока нет подключенных календарей.</p>
         ) : (
           feeds.map((feed) => (
-            <div key={feed.id} className="space-y-2 rounded-md border p-2">
+            <div key={feed.id} className="space-y-2 rounded-lg border border-border p-3">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-medium">{feed.title}</p>
                 <Badge variant={feed.isEnabled ? "success" : "outline"}>{feed.isEnabled ? "enabled" : "disabled"}</Badge>
               </div>
-              <p className="text-xs text-slate-500 break-all">{feed.icsUrl}</p>
+              <p className="text-xs text-muted-foreground break-all">{feed.icsUrl}</p>
               <div className="grid grid-cols-3 gap-2">
                 <Button
                   size="sm"
@@ -203,7 +203,7 @@ export default function CalendarPage() {
                     await load(token);
                   }}
                 >
-                  {feed.isEnabled ? "Disable" : "Enable"}
+                  {feed.isEnabled ? "Отключить" : "Включить"}
                 </Button>
                 <Button
                   size="sm"
@@ -214,7 +214,7 @@ export default function CalendarPage() {
                     await load(token);
                   }}
                 >
-                  Sync
+                  Синхр.
                 </Button>
                 <Button
                   size="sm"
@@ -225,7 +225,7 @@ export default function CalendarPage() {
                     await load(token);
                   }}
                 >
-                  Delete
+                  Удалить
                 </Button>
               </div>
             </div>

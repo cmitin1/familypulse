@@ -60,31 +60,34 @@ export function TaskCard({
   const diff = daysUntilDue(task.dueDate, timezone);
   const assigneeName = task.assignee?.firstName || task.assignee?.username || "Без исполнителя";
   const initials = getInitials(assigneeName);
+  const isDone = task.status === "DONE";
 
   return (
-    <Card className="space-y-3 p-3">
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex items-start gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-[11px] font-semibold text-slate-700">
+    <Card className="space-y-3 p-3.5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-2.5">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold text-foreground">
             {initials}
           </div>
-          <div>
-          <p className="font-medium">{task.title}</p>
-          <p className="text-xs text-slate-500">{assigneeName}</p>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-foreground">{task.title}</p>
+            <p className="text-xs text-muted-foreground">{assigneeName}</p>
           </div>
         </div>
-        <Badge variant={task.status === "DONE" ? "success" : "outline"}>{task.status.toLowerCase()}</Badge>
+        <Badge variant={isDone ? "success" : "outline"}>{isDone ? "выполнена" : "открыта"}</Badge>
       </div>
-      <div className="flex flex-wrap items-center gap-2 text-xs">
+
+      <div className="flex flex-wrap items-center gap-2">
         <Badge variant={dueBadgeVariant(diff)}>{dueText(diff)}</Badge>
-        <span className="text-slate-500">{formatDateTime(task.dueDate ?? null, timezone)}</span>
+        <span className="text-xs text-muted-foreground">{formatDateTime(task.dueDate ?? null, timezone)}</span>
       </div>
-      <div className="grid grid-cols-3 gap-2">
-        <Button size="sm" variant="outline" disabled={task.status === "DONE"} onClick={() => onDone(task.id)}>
+
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <Button size="sm" variant="outline" disabled={isDone} onClick={() => onDone(task.id)}>
           Выполнено
         </Button>
         <select
-          className="h-9 rounded-md border border-border px-2 text-xs"
+          className="h-11 rounded-lg border border-input bg-card px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           value={task.assigneeId ?? ""}
           onChange={(e) => onReassign(task.id, e.target.value || null)}
         >
@@ -96,7 +99,7 @@ export function TaskCard({
           ))}
         </select>
         <Button size="sm" onClick={() => setEditing(true)}>
-          Редакт.
+          Редактировать
         </Button>
       </div>
       <TaskEditorSheet

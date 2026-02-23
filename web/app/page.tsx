@@ -198,8 +198,8 @@ export default function TodayPage() {
   if (!token && status !== "OK") {
     return (
       <Card className="space-y-2">
-        <h1 className="text-lg font-semibold">FamilyPulse</h1>
-        <p className="text-sm text-slate-600">{status}</p>
+        <h1 className="page-title">FamilyPulse</h1>
+        <p className="page-subtitle">{status}</p>
         {error ? <Alert variant="error">{error}</Alert> : null}
       </Card>
     );
@@ -207,11 +207,11 @@ export default function TodayPage() {
 
   if (!home?.id) {
     return (
-      <div className="space-y-4">
+      <div className="page-shell">
         {error ? <Alert variant="error">{error}</Alert> : null}
         <Card className="space-y-3">
-          <h1 className="text-lg font-semibold">Добро пожаловать в FamilyPulse</h1>
-          <p className="text-sm text-slate-600">Создайте дом или присоединитесь по инвайт-коду.</p>
+          <h1 className="page-title">Добро пожаловать в FamilyPulse</h1>
+          <p className="page-subtitle">Создайте дом или присоединитесь по инвайт-коду.</p>
           <Input value={homeName} onChange={(e) => setHomeName(e.target.value)} placeholder="Название дома" />
           <Button
             onClick={async () => {
@@ -251,35 +251,37 @@ export default function TodayPage() {
   const progress = total > 0 ? Math.round((done / total) * 100) : 0;
 
   return (
-    <div className="space-y-4">
+    <div className="page-shell">
       {error ? <Alert variant="error">{error}</Alert> : null}
       {notice ? <Alert variant="info">{notice}</Alert> : null}
       <Card className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h1 className="text-lg font-semibold">Сегодня</h1>
-          <div className="inline-flex rounded-md border border-border bg-white p-1">
-            <Button size="sm" variant={scope === "mine" ? "default" : "outline"} onClick={() => setScope("mine")}>
+        <div className="page-header">
+          <div>
+            <h1 className="page-title">Сегодня</h1>
+            <p className="page-subtitle">
+              {home.name} • {today?.date ?? "—"}
+            </p>
+          </div>
+          <div className="inline-flex rounded-lg border border-border bg-secondary p-1">
+            <Button size="sm" variant={scope === "mine" ? "default" : "ghost"} onClick={() => setScope("mine")}>
               Мои
             </Button>
-            <Button size="sm" variant={scope === "all" ? "default" : "outline"} onClick={() => setScope("all")}>
+            <Button size="sm" variant={scope === "all" ? "default" : "ghost"} onClick={() => setScope("all")}>
               Все
             </Button>
           </div>
         </div>
-        <p className="text-sm text-slate-600">
-          {home.name} • {today?.date ?? "—"}
-        </p>
         <div className="grid grid-cols-2 gap-2 text-sm md:grid-cols-4">
-          <div className="rounded-md bg-slate-50 p-2">Прогресс: {done}/{total}</div>
-          <div className="rounded-md bg-slate-50 p-2">Выполнено: {progress}%</div>
-          <div className="rounded-md bg-slate-50 p-2">Очки сегодня: {today?.pointsToday ?? 0}</div>
-          <div className="rounded-md bg-slate-50 p-2">Стрик: {today?.streakClosed ? "закрыт" : "открыт"}</div>
+          <div className="rounded-lg border border-border bg-muted p-3">Прогресс: {done}/{total}</div>
+          <div className="rounded-lg border border-border bg-muted p-3">Выполнено: {progress}%</div>
+          <div className="rounded-lg border border-border bg-muted p-3">Очки сегодня: {today?.pointsToday ?? 0}</div>
+          <div className="rounded-lg border border-border bg-muted p-3">Стрик: {today?.streakClosed ? "закрыт" : "открыт"}</div>
         </div>
         <Button
           variant="outline"
           onClick={() => setNotice("Экспорт в чат будет добавлен в следующем небольшом обновлении.")}
         >
-          Share Today to chat
+          Поделиться в чате
         </Button>
         <div className="grid grid-cols-2 gap-2">
           <Button variant={taskFilter === "overdue" ? "default" : "outline"} onClick={() => setTaskFilter("overdue")}>
@@ -308,9 +310,14 @@ export default function TodayPage() {
       ) : (
         <>
           <Card className="space-y-2">
-            <h2 className="font-medium">Задачи ({taskFilter})</h2>
+            <h2 className="text-base font-semibold">Задачи ({taskFilter})</h2>
             {tasks.length === 0 ? (
-              <p className="rounded-md border border-dashed p-3 text-sm text-slate-500">Нет задач — добавьте первую</p>
+              <div className="space-y-3 rounded-lg border border-dashed border-border bg-muted/50 p-4">
+                <p className="text-sm text-muted-foreground">Нет задач — добавьте первую.</p>
+                <Button variant="outline" onClick={() => setEditorOpen(true)}>
+                  Создать задачу
+                </Button>
+              </div>
             ) : (
               tasks.map((task: any) => (
                 <TaskCard
@@ -354,23 +361,21 @@ export default function TodayPage() {
             }}
           />
 
-          <Card className="space-y-2 border-sky-200 bg-sky-50/50">
-            <h2 className="font-medium text-sky-900">Routines</h2>
+          <Card className="space-y-2">
+            <h2 className="text-base font-semibold">Рутины</h2>
             {(today?.routineInstances ?? []).length === 0 ? (
-              <p className="rounded-md border border-dashed border-sky-200 p-3 text-sm text-sky-700">
-                Нет рутин на сегодня — добавьте первую
-              </p>
+              <p className="empty-state">Нет рутин на сегодня — добавьте первую.</p>
             ) : (
               (today?.routineInstances ?? []).map((item: any) => (
-                <div key={item.id} className="flex items-center justify-between rounded-md border bg-white p-3 text-sm">
+                <div key={item.id} className="flex items-center justify-between rounded-lg border border-border bg-card p-3 text-sm">
                   <div>
                     <p className="font-medium">{item.routine.title}</p>
-                    <p className="text-xs text-slate-500">
+                    <p className="text-xs text-muted-foreground">
                       {item.assignee?.firstName || item.assignee?.username || "Без исполнителя"}
                     </p>
                   </div>
                   {item.isDone ? (
-                    <Badge variant="success">done</Badge>
+                    <Badge variant="success">выполнено</Badge>
                   ) : (
                     <Button
                       size="sm"
@@ -383,7 +388,7 @@ export default function TodayPage() {
                         }
                       }}
                     >
-                      done
+                      Выполнить
                     </Button>
                   )}
                 </div>

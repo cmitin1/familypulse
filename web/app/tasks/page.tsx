@@ -9,6 +9,7 @@ import { api, getErrorMessage } from "@/lib/api";
 import { getToken } from "@/lib/session";
 import { TaskEditorSheet } from "@/components/tasks/task-editor-sheet";
 import { TaskCard } from "@/components/tasks/task-card";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function TasksPage() {
   const [token, setToken] = useState("");
@@ -40,19 +41,28 @@ export default function TasksPage() {
   }, []);
 
   return (
-    <div className="space-y-3">
+    <div className="page-shell">
       {error ? <Alert variant="error">{error}</Alert> : null}
       <Card className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h1 className="text-lg font-semibold">Tasks</h1>
+        <div className="page-header">
+          <h1 className="page-title">Задачи</h1>
           <Button onClick={() => setEditorOpen(true)}>Новая задача</Button>
         </div>
       </Card>
       <Card className="space-y-2">
         {loading ? (
-          <p className="text-sm text-slate-500">Загрузка задач...</p>
+          <div className="space-y-2">
+            <Skeleton className="h-5 w-36" />
+            <Skeleton className="h-24 w-full" />
+            <Skeleton className="h-24 w-full" />
+          </div>
         ) : tasks.length === 0 ? (
-          <p className="rounded-md border border-dashed p-3 text-sm text-slate-500">Нет задач — добавьте первую</p>
+          <div className="space-y-3 rounded-lg border border-dashed border-border bg-muted/50 p-4">
+            <p className="text-sm text-muted-foreground">Нет задач — добавьте первую.</p>
+            <Button variant="outline" onClick={() => setEditorOpen(true)}>
+              Создать задачу
+            </Button>
+          </div>
         ) : (
           tasks.map((task) => (
             <TaskCard

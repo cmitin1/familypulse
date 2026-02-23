@@ -51,17 +51,29 @@ export function TaskEditorSheet({
         <SheetTitle>{initial ? "Редактировать задачу" : "Новая задача"}</SheetTitle>
       </SheetHeader>
       <div className="space-y-3">
-        <Input placeholder="Название задачи" value={title} onChange={(e) => setTitle(e.target.value)} />
-        <AssigneePicker members={members} value={assigneeId} onChange={setAssigneeId} />
-        <DueDatePicker value={dueDate} onChange={setDueDate} />
-        <select
-          className="h-10 w-full rounded-md border border-border px-3 text-sm"
-          value={status}
-          onChange={(e) => setStatus(e.target.value as "OPEN" | "DONE")}
-        >
-          <option value="OPEN">OPEN</option>
-          <option value="DONE">DONE</option>
-        </select>
+        <div className="space-y-1.5">
+          <p className="field-label">Название</p>
+          <Input placeholder="Например: вынести мусор" value={title} onChange={(e) => setTitle(e.target.value)} />
+        </div>
+        <div className="space-y-1.5">
+          <p className="field-label">Исполнитель</p>
+          <AssigneePicker members={members} value={assigneeId} onChange={setAssigneeId} />
+        </div>
+        <div className="space-y-1.5">
+          <p className="field-label">Дедлайн</p>
+          <DueDatePicker value={dueDate} onChange={setDueDate} />
+        </div>
+        <div className="space-y-1.5">
+          <p className="field-label">Статус</p>
+          <select
+            className="h-11 w-full rounded-lg border border-input bg-card px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            value={status}
+            onChange={(e) => setStatus(e.target.value as "OPEN" | "DONE")}
+          >
+            <option value="OPEN">OPEN</option>
+            <option value="DONE">DONE</option>
+          </select>
+        </div>
         <Button
           disabled={!title.trim() || saving}
           onClick={async () => {

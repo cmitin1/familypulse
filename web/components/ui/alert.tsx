@@ -9,11 +9,11 @@ type AlertProps = {
 };
 
 const styles: Record<NonNullable<AlertProps["variant"]>, string> = {
-  info: "border-slate-200 bg-slate-50 text-slate-700",
-  error: "border-red-200 bg-red-50 text-red-700",
-  success: "border-emerald-200 bg-emerald-50 text-emerald-700"
+  info: "border-border bg-secondary text-foreground",
+  error: "border-danger/25 bg-danger/10 text-danger",
+  success: "border-success/25 bg-success/10 text-success"
 };
 
 export function Alert({ variant = "info", children, className }: AlertProps) {
-  return <div className={cn("rounded-md border px-3 py-2 text-sm", styles[variant], className)}>{children}</div>;
+  return <div className={cn("rounded-lg border px-3 py-2 text-sm", styles[variant], className)}>{children}</div>;
 }
