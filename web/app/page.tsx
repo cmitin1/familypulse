@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, getErrorMessage } from "@/lib/api";
-import { getToken, setToken } from "@/lib/session";
+import { ApiError, api, getErrorMessage } from "@/lib/api";
+import { clearToken, getToken, setToken } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -38,6 +38,33 @@ export default function TodayPage() {
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
     return "";
+  }
+
+  async function reAuth(): Promise<string> {
+    const initData = await waitForInitData();
+    if (!initData) {
+      throw new Error("Не получили initData для повторной авторизации");
+    }
+    const resp = await api.authTelegram(initData);
+    setToken(resp.token);
+    setTokenState(resp.token);
+    setStatus("OK");
+    setError("");
+    return resp.token as string;
+  }
+
+  async function withReAuth<T>(action: (actualToken: string) => Promise<T>): Promise<T> {
+    try {
+      return await action(token);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        clearToken();
+        setTokenState("");
+        const newToken = await reAuth();
+        return action(newToken);
+      }
+      throw err;
+    }
   }
 
   useEffect(() => {
@@ -82,7 +109,7 @@ export default function TodayPage() {
   useEffect(() => {
     if (!token) return;
     setIsLoading(true);
-    Promise.all([api.getCurrentHome(token), api.getToday(token, scope)])
+    withReAuth((actualToken) => Promise.all([api.getCurrentHome(actualToken), api.getToday(actualToken, scope)]))
       .then(([h, t]) => {
         setHome(h);
         setToday(t);
@@ -100,7 +127,9 @@ export default function TodayPage() {
     if (!token) return;
     setIsLoading(true);
     try {
-      const [h, t] = await Promise.all([api.getCurrentHome(token), api.getToday(token, scope)]);
+      const [h, t] = await withReAuth((actualToken) =>
+        Promise.all([api.getCurrentHome(actualToken), api.getToday(actualToken, scope)])
+      );
       setHome(h);
       setToday(t);
       setError("");
@@ -132,7 +161,7 @@ export default function TodayPage() {
           <Button
             onClick={async () => {
               try {
-                await api.createHome(token, homeName, "Europe/Moscow");
+                await withReAuth((actualToken) => api.createHome(actualToken, homeName, "Europe/Moscow"));
                 await reload();
               } catch (err) {
                 setError(getErrorMessage(err));
@@ -148,7 +177,7 @@ export default function TodayPage() {
             variant="outline"
             onClick={async () => {
               try {
-                await api.joinInvite(token, joinCode);
+                await withReAuth((actualToken) => api.joinInvite(actualToken, joinCode));
                 await reload();
               } catch (err) {
                 setError(getErrorMessage(err));
