@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, CalendarX2, CheckCircle2, Circle, Clock3 } from "lucide-react";
+import { AlertTriangle, CalendarX2, CheckCircle2, Circle, Clock3, Pencil } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -96,8 +96,15 @@ export function TaskCard({
           {isDone ? <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> : <DueStatusIcon diff={diff} />}
           <span className={isDone ? "sr-only" : "hidden sm:inline"}>{isDone ? "выполнено" : dueText(diff)}</span>
         </Badge>
-        <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
-          Ред.
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-8 w-8 shrink-0 p-0"
+          onClick={() => setEditing(true)}
+          aria-label="Редактировать задачу"
+          title="Редактировать задачу"
+        >
+          <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
         </Button>
       </div>
       <TaskEditorSheet
