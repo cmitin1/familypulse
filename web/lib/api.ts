@@ -1,4 +1,4 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL;
+const API_PROXY_PREFIX = "/api/proxy";
 
 type RequestOptions = {
   method?: string;
@@ -19,6 +19,9 @@ export class ApiError extends Error {
 }
 
 export function getErrorMessage(error: unknown): string {
+  if (error instanceof TypeError && /load failed|fetch/i.test(error.message)) {
+    return "Не удалось подключиться к серверу. Проверьте, что web и backend доступны по HTTPS.";
+  }
   if (error instanceof ApiError) {
     return error.message;
   }
@@ -29,11 +32,7 @@ export function getErrorMessage(error: unknown): string {
 }
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  if (!API_URL) {
-    throw new Error("NEXT_PUBLIC_API_URL не настроен");
-  }
-
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await fetch(`${API_PROXY_PREFIX}${path}`, {
     method: options.method ?? "GET",
     headers: {
       "Content-Type": "application/json",

@@ -28,6 +28,18 @@ export default function TodayPage() {
   const [homeName, setHomeName] = useState("Наш дом");
   const [notice, setNotice] = useState("");
 
+  async function waitForInitData(maxAttempts = 12, delayMs = 250): Promise<string> {
+    for (let i = 0; i < maxAttempts; i += 1) {
+      const tg = window.Telegram?.WebApp;
+      const value = tg?.initData;
+      if (value && typeof value === "string" && value.length > 0) {
+        return value;
+      }
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+    return "";
+  }
+
   useEffect(() => {
     const tg = window.Telegram?.WebApp;
     tg?.ready?.();
@@ -40,25 +52,31 @@ export default function TodayPage() {
       return;
     }
 
-    const initData = tg?.initData;
-    if (!initData) {
-      // Не показываем "нет initData" при открытии в Mini App.
-      setStatus(tg ? "Проверьте подключение Mini App и откройте снова" : "Откройте страницу из Telegram Mini App");
-      setIsLoading(false);
-      return;
-    }
-    api
-      .authTelegram(initData)
-      .then((resp) => {
-        setToken(resp.token);
-        setTokenState(resp.token);
-        setStatus("OK");
+    waitForInitData()
+      .then((initData) => {
+        if (!initData) {
+          setStatus(tg ? "Не получили initData. Откройте Mini App через бота." : "Откройте страницу из Telegram Mini App");
+          setIsLoading(false);
+          return;
+        }
+        return api
+          .authTelegram(initData)
+          .then((resp) => {
+            setToken(resp.token);
+            setTokenState(resp.token);
+            setStatus("OK");
+          })
+          .catch((err) => {
+            setStatus("Ошибка авторизации Telegram");
+            setError(getErrorMessage(err));
+          })
+          .finally(() => setIsLoading(false));
       })
       .catch((err) => {
-        setStatus("Ошибка авторизации Telegram");
+        setStatus("Ошибка инициализации Mini App");
         setError(getErrorMessage(err));
-      })
-      .finally(() => setIsLoading(false));
+        setIsLoading(false);
+      });
   }, []);
 
   useEffect(() => {
