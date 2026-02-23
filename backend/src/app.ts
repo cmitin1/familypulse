@@ -143,6 +143,15 @@ app.post("/homes/switch", async (req, res) => {
   return res.json({ ok: true, activeHomeId: parsed.data.homeId });
 });
 
+app.post("/homes/leave-current", async (req, res) => {
+  const user = (req as AuthedRequest).user;
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { activeHomeId: null }
+  });
+  return res.json({ ok: true, activeHomeId: null });
+});
+
 app.post("/invites", requireHome, async (req, res) => {
   const schema = z.object({
     maxUses: z.number().int().positive().optional(),

@@ -5,6 +5,7 @@ import { BottomNav } from "@/components/nav";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
+import { Input } from "@/components/ui/input";
 import { api, getErrorMessage } from "@/lib/api";
 import { getToken } from "@/lib/session";
 
@@ -14,22 +15,26 @@ export default function HomePage() {
   const [invite, setInvite] = useState<any>(null);
   const [scoreboard, setScoreboard] = useState<any[]>([]);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [joinCode, setJoinCode] = useState("");
+
+  async function loadHomeData(currentToken: string) {
+    const [h, s] = await Promise.all([api.getCurrentHome(currentToken), api.getScoreboard(currentToken)]);
+    setHome(h);
+    setScoreboard(s);
+  }
 
   useEffect(() => {
     const t = getToken();
     setToken(t);
     if (!t) return;
-    Promise.all([api.getCurrentHome(t), api.getScoreboard(t)])
-      .then(([h, s]) => {
-        setHome(h);
-        setScoreboard(s);
-      })
-      .catch((err) => setError(getErrorMessage(err)));
+    loadHomeData(t).catch((err) => setError(getErrorMessage(err)));
   }, []);
 
   return (
     <div className="page-shell">
       {error ? <Alert variant="error">{error}</Alert> : null}
+      {notice ? <Alert variant="success">{notice}</Alert> : null}
       <Card className="space-y-2">
         <h1 className="page-title">Дом</h1>
         <p className="text-sm text-foreground">{home?.name || "Дом не выбран"}</p>
@@ -38,6 +43,20 @@ export default function HomePage() {
         <p className="text-xs text-muted-foreground">
           Чтобы бот отправлял дайджесты в чат, откройте нужную группу и выполните команду `/link`.
         </p>
+        <Button
+          variant="outline"
+          onClick={async () => {
+            if (!token) return;
+            try {
+              await api.leaveCurrentHome(token);
+              window.location.href = "/";
+            } catch (err) {
+              setError(getErrorMessage(err));
+            }
+          }}
+        >
+          Выйти из дома
+        </Button>
       </Card>
       <Card className="space-y-2">
         <h2 className="text-base font-semibold">Участники</h2>
@@ -66,6 +85,28 @@ export default function HomePage() {
           Создать инвайт
         </Button>
         {invite?.code ? <p className="text-sm text-foreground">Invite code: {invite.code}</p> : null}
+      </Card>
+      <Card className="space-y-2">
+        <h2 className="text-base font-semibold">Войти в дом по инвайт-коду</h2>
+        <Input value={joinCode} onChange={(e) => setJoinCode(e.target.value)} placeholder="Введите invite code" />
+        <Button
+          variant="outline"
+          onClick={async () => {
+            if (!token || !joinCode.trim()) return;
+            try {
+              await api.joinInvite(token, joinCode.trim());
+              setJoinCode("");
+              setError("");
+              setNotice("Вы успешно вошли в дом по инвайту и переключились на него.");
+              await loadHomeData(token);
+            } catch (err) {
+              setNotice("");
+              setError(getErrorMessage(err));
+            }
+          }}
+        >
+          Войти по коду
+        </Button>
       </Card>
       <Card className="space-y-2">
         <h2 className="text-base font-semibold">Таблица очков</h2>

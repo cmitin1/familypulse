@@ -91,6 +91,7 @@ export const api = {
     request<any>("/homes", { method: "POST", token, body: { name, timezone } }),
   joinInvite: (token: string, code: string) =>
     request<any>("/invites/join", { method: "POST", token, body: { code } }),
+  leaveCurrentHome: (token: string) => request<any>("/homes/leave-current", { method: "POST", token, body: {} }),
   getCurrentHome: (token: string) => request<any>("/homes/current", { token }),
   getToday: (token: string, scope: "all" | "mine" = "mine") => request<any>(withQuery("/today", { scope }), { token }),
   getTasks: (
