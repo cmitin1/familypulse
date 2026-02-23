@@ -58,6 +58,7 @@ export const config = {
   backendUrl: required("BACKEND_URL"),
   corsOrigin: process.env.CORS_ORIGIN ?? "*",
   aiFeatureEnabled: bool("AI_FEATURE_ENABLED", false),
+  aiDigestV2Enabled: bool("AI_DIGEST_V2_ENABLED", true),
   aiChatAnalysisEnabled: bool("AI_CHAT_ANALYSIS_ENABLED", false),
   aiChatAnalysisBatchLimit: boundedInt("AI_CHAT_ANALYSIS_BATCH_LIMIT", 100, 1, 500),
   aiChatPromptVersion: process.env.AI_CHAT_PROMPT_VERSION ?? "v1",

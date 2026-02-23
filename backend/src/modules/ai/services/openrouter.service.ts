@@ -21,6 +21,7 @@ type ChatCompletionInput = {
   userPrompt: string;
   model: string;
   timeoutMs?: number;
+  responseMode?: "json_object" | "text";
 };
 
 const DEFAULT_TIMEOUT_MS = 20_000;
@@ -69,7 +70,9 @@ export class OpenRouterService {
           },
           body: JSON.stringify({
             model: input.model,
-            response_format: { type: "json_object" },
+            ...((input.responseMode ?? "json_object") === "json_object"
+              ? { response_format: { type: "json_object" } }
+              : {}),
             messages: [
               { role: "system", content: input.systemPrompt },
               { role: "user", content: input.userPrompt }

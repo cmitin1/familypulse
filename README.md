@@ -153,6 +153,7 @@
   - `19:00` (`REMINDER_EVENING_TIME`): просроченные + дедлайн завтра (1 раз/день)
   - `21:30` локального времени дома: отправка чек-ина с callback кнопкой (1 раз/день)
 - hourly AI analysis (safe mode): новые сообщения из `TelegramMessage` -> OpenRouter -> `AiExtractionRun` + `AiSuggestion` (статус `PENDING`).
+- утренний авто-дайджест (09:00) использует digest v2, если включены `AI_FEATURE_ENABLED` и `AI_DIGEST_V2_ENABLED`; при ошибках LLM автоматически уходит в deterministic fallback.
 
 ### 5.1) AI Native MVP v1 (safe mode)
 
@@ -162,6 +163,7 @@
 - Невалидный/ошибочный AI-run логируется в `AiExtractionRun(status=ERROR)` и не валит backend.
 - Feature flags:
   - `AI_FEATURE_ENABLED`
+  - `AI_DIGEST_V2_ENABLED`
   - `AI_CHAT_ANALYSIS_ENABLED`
   - `AI_CHAT_ANALYSIS_BATCH_LIMIT`
   - `AI_CHAT_PROMPT_VERSION`
@@ -171,8 +173,10 @@
   - `POST /ai/suggestions/:id/approve|reject|ignore`
   - `GET /ai/summary/today`
   - `GET /ai/summary/digest?hours=24`
+  - для обратной совместимости старые поля summary сохранены, а v2-текст добавляется отдельным полем (`textV2`, `version`).
 - Mini App: новый раздел `/ai` (AI Inbox) с действиями approve/reject/ignore.
 - Safe mode: после `/link` AI-анализ чата **выключен по умолчанию**, включается явно командой `/ai_on` (owner), выключение `/ai_off`.
+- Digest v2: двухслойный формат (deterministic JSON context + LLM formatter) с детерминированным fallback при ошибках LLM.
 
 ### 6) Mini App UI
 
@@ -245,6 +249,7 @@ cp .env.example .env
 - `CORS_ORIGIN`
 - `NEXT_PUBLIC_API_URL`
 - `AI_FEATURE_ENABLED`
+- `AI_DIGEST_V2_ENABLED`
 - `AI_CHAT_ANALYSIS_ENABLED`
 - `AI_CHAT_ANALYSIS_BATCH_LIMIT`
 - `AI_CHAT_PROMPT_VERSION`
@@ -281,6 +286,7 @@ ENABLE_BOT=false ENABLE_SCHEDULER=false docker compose up --build
    - `npm run test:ai`
 3. Включать AI только после ручной валидации:
    - `AI_FEATURE_ENABLED=true`
+   - `AI_DIGEST_V2_ENABLED=true`
    - `AI_CHAT_ANALYSIS_ENABLED=true`
    - `OPENROUTER_API_KEY=<key>`
 4. Для каждого чата AI включается явно через `/ai_on` (после `/link` по умолчанию выключен).

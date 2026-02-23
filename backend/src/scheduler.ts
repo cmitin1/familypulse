@@ -7,6 +7,7 @@ import { config } from "./config.js";
 import { prisma } from "./db.js";
 import { buildDigestText } from "./services.js";
 import { AiAnalysisJobService } from "./modules/ai/services/ai-analysis.job.js";
+import { buildDigestBotText } from "./modules/ai/services/ai-bot-text.service.js";
 
 const SCHEDULER_LOCK_KEY = 90422001;
 
@@ -125,7 +126,10 @@ export function startScheduler(options?: { bot?: Telegraf | null }) {
           const bot = options?.bot ?? null;
 
           if (bot && hhmm === "09:00" && link.lastDigestYmd !== ymd) {
-            const text = await buildDigestText(link.homeId, tz, now);
+        const text =
+          config.aiFeatureEnabled
+            ? await buildDigestBotText(link.homeId, tz, "morning")
+            : await buildDigestText(link.homeId, tz, now);
             await bot.telegram.sendMessage(link.telegramChatId, text);
             await prisma.chatLink.update({
               where: { id: link.id },

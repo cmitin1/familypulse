@@ -1,8 +1,12 @@
 import { AiSuggestionStatus } from "@prisma/client";
+import { config } from "../../../config.js";
 import { prisma } from "../../../db.js";
 import { ensureTodayRoutineInstances, localDateEnd, localDateStart, ymdInTimezone } from "../../../services.js";
+import { DigestV2Service } from "./digest-v2.service.js";
 
 export class AiSummaryService {
+  private readonly digestV2Service = new DigestV2Service();
+
   private extractDiscussionSummary(rawResponse: unknown): string | null {
     if (!rawResponse || typeof rawResponse !== "object") {
       return null;
@@ -67,7 +71,7 @@ export class AiSummaryService {
     ]);
 
     const summaryText = `Сегодня: задач ${todayTasks.length}, рутин ${todayRoutines.length}, событий ${todayEvents.length}, AI-кандидатов ${aiSuggestions.length}.`;
-    return {
+    const basePayload = {
       summaryText,
       stats: {
         tasks: todayTasks.length,
@@ -79,6 +83,22 @@ export class AiSummaryService {
       todayRoutines,
       todayEvents,
       aiSuggestions
+    };
+
+    if (!config.aiDigestV2Enabled) {
+      return basePayload;
+    }
+    const digestV2 = await this.digestV2Service.buildDigestV2({
+      homeId,
+      mode: "today",
+      hours: 24,
+      useLlm: true
+    });
+    return {
+      ...basePayload,
+      version: digestV2.version,
+      textV2: digestV2.text,
+      usedLlm: digestV2.usedLlm
     };
   }
 
@@ -111,7 +131,7 @@ export class AiSummaryService {
       lastRun?.rawResponse ? "Есть свежий AI run." : "Свежих AI run пока нет."
     ].join(" ");
 
-    return {
+    const basePayload = {
       summaryText,
       hours: safeHours,
       counts: {
@@ -122,6 +142,22 @@ export class AiSummaryService {
       discussionSummary,
       lastRunAt: lastRun?.createdAt ?? null,
       latestSuggestions: suggestions.slice(0, 15)
+    };
+
+    if (!config.aiDigestV2Enabled) {
+      return basePayload;
+    }
+    const digestV2 = await this.digestV2Service.buildDigestV2({
+      homeId,
+      mode: "on_demand",
+      hours: safeHours,
+      useLlm: true
+    });
+    return {
+      ...basePayload,
+      version: digestV2.version,
+      textV2: digestV2.text,
+      usedLlm: digestV2.usedLlm
     };
   }
 }
