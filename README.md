@@ -1,84 +1,151 @@
-# FamilyPulse (Telegram Mini App + Bot)
+# FamilyPulse
 
-Рабочий прототип семейного task-manager для Telegram Mini App по ТЗ:
-- Backend: Node.js 20 + TypeScript + Express + Prisma + Zod
-- Bot: Telegraf
-- DB: Postgres
-- Web: Next.js App Router + Tailwind + базовые shadcn/ui-компоненты
-- Infra: docker-compose (`db`, `backend`, `web`)
+Прототип семейного task-manager для Telegram Mini App.
 
-## A→G (что реализовано)
+## Стек
 
-### A) Scaffolding + docker-compose + Prisma
-- Монорепо с папками `backend` и `web`
-- `docker-compose.yml` с сервисами `db`, `backend`, `web`
-- Prisma schema + миграция `backend/prisma/migrations/0001_init/migration.sql`
-- Seed: `backend/prisma/seed.ts`
+- Backend: `Node.js 20` + `TypeScript` + `Express` + `Prisma` + `Zod`
+- Bot: `Telegraf` (код реализован в отдельных модулях)
+- DB: `Postgres`
+- Frontend: `Next.js App Router` + `Tailwind` + базовые `shadcn/ui`-подобные компоненты
+- Infra: `docker-compose` + `Caddy` (HTTPS reverse proxy)
 
-### B) Auth initData + JWT + middleware
-- `POST /auth/telegram`: серверная HMAC-валидация `Telegram.WebApp.initData`
-- JWT выдача и middleware `requireAuth`
-- `initDataUnsafe` не используется
+## Архитектура
 
-### C) Homes + activeHome + invites
-- `/homes` create/current/switch
-- `/invites` create/join
-- `activeHomeId` хранится в `User`
+- `backend` — REST API, авторизация Telegram, бизнес-логика задач/рутин/очков.
+- `web` — Telegram Mini App, экраны onboarding/today/tasks/routines/home.
+- `web/app/api/proxy/[...path]/route.ts` — server-side proxy (web -> backend), чтобы клиент не бил напрямую в API-домен.
+- `db` — Postgres.
+- `caddy` — HTTPS прокси:
+  - `api.* -> backend:4000`
+  - `app.* -> web:3000`
 
-### D) Tasks + Today
-- `/tasks` create/list/done (идемпотентно по очкам через `ScoreEvent` unique)
-- `/today` возвращает tasks + routine instances + streak state
-- UI: экран `Today` + `Tasks`
+## Что реализовано
 
-### E) Routines + RoutineInstance + UI
-- `/routines` create/list/toggle
-- Генерация `RoutineInstance` при `/today`
-- `ROTATE`: `(YYYYMMDD mod count)` по списку участников
-- UI: экран `Routines`
+### 1) Домен и БД
 
-### F) Bot + /link + scheduler
-- Bot команды: `/start`, `/invite`, `/link`, `/digest`, `/help`
-- В группах Mini App ссылка формата:
-  `https://t.me/<botusername>/<appname>?startapp=<payload>`
-- Scheduler: тикер раз в минуту, по timezone дома:
-  - 09:00 утренний дайджест (1 раз/день)
-  - 21:30 чек-ин с callback-кнопкой “Закрыть день ✅” (1 раз/день)
+Сущности (`Prisma`):
+- `User`
+- `Home`
+- `HomeMember`
+- `Invite`
+- `Task`
+- `Routine`
+- `RoutineInstance`
+- `ScoreEvent`
+- `Streak`
+- `ChatLink`
 
-### G) Полировка
-- ACL: только member activeHome может работать с home-данными
-- Zod-валидация основных входных DTO
-- Идемпотентность done через уникальные ограничения и `ScoreEvent`
+Обязательные уникальности:
+- `HomeMember(homeId, userId)`
+- `Invite(code)`
+- `RoutineInstance(routineId, date)`
+- `Streak(homeId, date)`
+- `ScoreEvent(homeId, userId, sourceType, sourceId)`
+- `ChatLink(homeId, telegramChatId)`
 
-## Сущности и уникальные ограничения
+### 2) Auth и ACL
 
-В `backend/prisma/schema.prisma` добавлены сущности:
-- `User`, `Home`, `HomeMember`, `Invite`, `Task`, `Routine`, `RoutineInstance`, `ScoreEvent`, `Streak`, `ChatLink`
+- `POST /auth/telegram`:
+  - принимает `initData`
+  - валидирует HMAC подпись Telegram (`WebAppData`)
+  - проверяет `auth_date` (просрочка/будущее)
+  - не использует `initDataUnsafe`
+  - upsert пользователя и выдача JWT (`HS256`)
+- `requireAuth` — проверка Bearer JWT.
+- `requireHome` — проверка `activeHomeId` + членства пользователя в доме.
 
-И обязательные уникальности:
-- `HomeMember(homeId,userId)`
-- `RoutineInstance(routineId,date)`
-- `Streak(homeId,date)`
-- `ScoreEvent(homeId,userId,sourceType,sourceId)`
+### 3) API
 
-## Telegram детали
+#### Homes / Invites
+- `POST /homes`
+- `GET /homes/current`
+- `POST /homes/switch`
+- `POST /invites` (owner only)
+- `POST /invites/join` (транзакционно, учитывает лимит/срок invite)
 
-- Авторизация Mini App только через `initData` + HMAC на сервере.
-- Для группового открытия Mini App используются direct links (`startapp`, `tgWebAppStartParam`).
-- В прототипе сообщения в группу отправляются ботом (`sendMessage`).
+#### Tasks
+- `POST /tasks`
+- `GET /tasks?scope=mine|all&date=YYYY-MM-DD`
+- `PATCH /tasks/:id` (status/assigneeId/dueDate)
+- `POST /tasks/:id/done` (идемпотентно, начисление очков через `ScoreEvent`)
+
+#### Routines
+- `POST /routines` (owner only, строгая валидация DAILY/WEEKLY + FIXED/ROTATE)
+- `GET /routines`
+- `POST /routines/:id/toggle`
+
+#### Today / Scoreboard
+- `GET /today?scope=mine|all&date=YYYY-MM-DD`
+  - создаёт `RoutineInstance` на день при необходимости
+  - возвращает `tasks`, `routineInstances`, `streakClosed`, `pointsToday`, `doneCount`, `totalCount`
+- `POST /routine-instances/:id/done` (идемпотентно)
+- `GET /scoreboard?period=week|month`
+
+### 4) Логика рутин и очков
+
+- Генерация инстансов рутин на дату в `/today`.
+- Для `ROTATE`: индекс назначения = `Number(YYYYMMDD) % memberCount`.
+- Повторные `done` не дают повторные очки (уникальность `ScoreEvent`).
+- Закрытие дня в `Streak` идемпотентно за счёт уникальности `(homeId, date)`.
+
+### 5) Telegram Bot и Scheduler (реализовано в коде)
+
+В `backend/src/bot.ts`:
+- `/start`
+- `/app`
+- `/help`
+- `/invite`
+- `/link`
+- `/digest`
+- callback `checkin:<homeId>:<dateYmd>`
+
+В `backend/src/scheduler.ts`:
+- cron каждую минуту
+- для каждого `ChatLink.enabled=true`:
+  - `09:00` локального времени дома: отправка дайджеста (1 раз/день)
+  - `21:30` локального времени дома: отправка чек-ина с callback кнопкой (1 раз/день)
+
+### 6) Mini App UI
+
+- `Onboarding` на главной: создать дом / войти по invite-коду.
+- `Today`: переключение `mine/all`, прогресс, points, streak, done по tasks/routines.
+- `Tasks`: создание, смена assignee, смена статуса.
+- `Routines`: создание (DAILY/WEEKLY, FIXED/ROTATE), toggle active.
+- `Home`: участники, инвайт, статус привязки группового чата, scoreboard.
+
+### 7) Дополнительная устойчивость web
+
+- API-запросы идут через `/api/proxy/...`.
+- Для `401` на главной добавлена повторная авторизация (сброс токена + новый `auth/telegram`).
+- Обработаны частые ошибки WebView (`load failed` и т.п.) с человекочитаемыми сообщениями.
+
+## Важный текущий статус запуска
+
+- Модули бота/планировщика реализованы (`backend/src/bot.ts`, `backend/src/scheduler.ts`).
+- Текущий `backend/src/index.ts` поднимает только Express API.
+- Если нужен runtime bot/scheduler в одном процессе, entrypoint нужно связать с запуском Telegraf и cron.
 
 ## ENV
 
-1) Скопируйте:
+Скопируйте:
+
 ```bash
 cp .env.example .env
 ```
-2) Заполните:
+
+Обязательные переменные:
+- `JWT_SECRET`
+- `JWT_EXPIRES_IN`
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_BOT_USERNAME`
-- `MINI_APP_URL` (публичный URL web, например через туннель)
-- `JWT_SECRET`
+- `TELEGRAM_MINI_APP_NAME`
+- `MINI_APP_URL`
+- `BACKEND_URL`
+- `CORS_ORIGIN`
+- `NEXT_PUBLIC_API_URL`
 
-## Запуск
+## Локальный запуск
 
 ```bash
 docker compose up --build
@@ -86,57 +153,29 @@ docker compose up --build
 
 Сервисы:
 - Web: `http://localhost:3000`
-- Backend: `http://localhost:4000`
-- DB: `localhost:5432`
+- API: `http://localhost:4000`
+- Postgres: `localhost:5432`
+- Caddy: `:80`, `:443`
 
-## Основные API
+## Миграции и seed
 
-- `POST /auth/telegram`
-- `POST /homes`, `GET /homes/current`, `POST /homes/switch`
-- `POST /invites`, `POST /invites/join`
-- `POST /tasks`, `GET /tasks`, `POST /tasks/:id/done`
-- `POST /routines`, `GET /routines`, `POST /routines/:id/toggle`
-- `GET /today`, `POST /routine-instances/:id/done`
-- `GET /scoreboard`
+- Миграция: `backend/prisma/migrations/0001_init/migration.sql`
+- Seed: `backend/prisma/seed.ts`
+  - создаёт 2 demo-пользователя (`telegramId=10001`, `10002`)
+  - создаёт demo-дом и 1 demo-задачу
 
-## Файлы
+## Структура проекта
 
-- `docker-compose.yml`
-- `.env.example`
-- `backend/package.json`
-- `backend/tsconfig.json`
-- `backend/Dockerfile`
-- `backend/src/index.ts`
-- `backend/src/app.ts`
-- `backend/src/auth.ts`
-- `backend/src/middleware.ts`
-- `backend/src/bot.ts`
-- `backend/src/scheduler.ts`
-- `backend/src/services.ts`
-- `backend/src/config.ts`
-- `backend/src/db.ts`
-- `backend/src/types.ts`
-- `backend/prisma/schema.prisma`
-- `backend/prisma/migrations/0001_init/migration.sql`
-- `backend/prisma/migrations/migration_lock.toml`
-- `backend/prisma/seed.ts`
-- `web/package.json`
-- `web/Dockerfile`
-- `web/next.config.mjs`
-- `web/tailwind.config.ts`
-- `web/postcss.config.mjs`
-- `web/tsconfig.json`
-- `web/next-env.d.ts`
-- `web/app/layout.tsx`
-- `web/app/globals.css`
-- `web/app/page.tsx`
-- `web/app/tasks/page.tsx`
-- `web/app/routines/page.tsx`
-- `web/app/home/page.tsx`
-- `web/components/nav.tsx`
-- `web/components/ui/button.tsx`
-- `web/components/ui/card.tsx`
-- `web/components/ui/input.tsx`
-- `web/lib/api.ts`
-- `web/lib/session.ts`
-- `web/lib/utils.ts`
+- `backend/src/app.ts` — API роуты и основная бизнес-логика.
+- `backend/src/auth.ts` — валидация Telegram initData + JWT.
+- `backend/src/middleware.ts` — auth/home middleware.
+- `backend/src/services.ts` — idempotent points, routine generation, digest builder.
+- `backend/src/bot.ts` — команды бота и callback.
+- `backend/src/scheduler.ts` — планировщик дайджест/чек-ин.
+- `web/app/page.tsx` — главная (onboarding + today).
+- `web/app/tasks/page.tsx` — задачи.
+- `web/app/routines/page.tsx` — рутины.
+- `web/app/home/page.tsx` — дом/инвайты/scoreboard.
+- `web/app/api/proxy/[...path]/route.ts` — proxy в backend.
+- `docker-compose.yml` — оркестрация сервисов.
+- `Caddyfile` — HTTPS reverse proxy правила.
