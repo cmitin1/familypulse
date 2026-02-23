@@ -44,7 +44,7 @@ export const config = {
   reminderMorningTime: process.env.REMINDER_MORNING_TIME ?? "09:00",
   reminderEveningTime: process.env.REMINDER_EVENING_TIME ?? "19:00",
   checkinTime: process.env.CHECKIN_TIME ?? "21:30",
-  telegramBotToken: optional("TELEGRAM_BOT_TOKEN"),
+  telegramBotToken: required("TELEGRAM_BOT_TOKEN"),
   telegramBotUsername: optional("TELEGRAM_BOT_USERNAME"),
   telegramMiniAppName: process.env.TELEGRAM_MINI_APP_NAME ?? "familypulse",
   miniAppUrl: required("MINI_APP_URL"),

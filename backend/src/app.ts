@@ -78,7 +78,9 @@ app.post("/auth/telegram", async (req, res) => {
       homes: memberships.map((m) => m.home),
       activeHomeId
     });
-  } catch {
+  } catch (error) {
+    // Keep API response generic, but log root cause for ops/debug.
+    console.warn("auth/telegram failed:", error instanceof Error ? error.message : error);
     return res.status(401).json({ error: "Invalid Telegram initData" });
   }
 });

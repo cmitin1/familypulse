@@ -89,16 +89,17 @@ export default function TodayPage() {
     tg?.ready?.();
     tg?.expand?.();
 
-    const existing = getToken();
-    if (existing) {
-      setTokenState(existing);
-      setStatus("OK");
-      return;
-    }
-
     waitForInitData()
       .then((initData) => {
+        const existing = getToken();
         if (!initData) {
+          if (existing) {
+            setTokenState(existing);
+            setStatus("OK");
+            setError("");
+            setIsLoading(false);
+            return;
+          }
           setStatus(tg ? "Не получили initData. Откройте Mini App через бота." : "Откройте страницу из Telegram Mini App");
           setIsLoading(false);
           return;
@@ -109,8 +110,11 @@ export default function TodayPage() {
             setToken(resp.token);
             setTokenState(resp.token);
             setStatus("OK");
+            setError("");
           })
           .catch((err) => {
+            clearToken();
+            setTokenState("");
             setStatus("Ошибка авторизации Telegram");
             setError(getErrorMessage(err));
           })

@@ -36,6 +36,12 @@ export function getErrorMessage(error: unknown): string {
     return "Не удалось подключиться к серверу. Проверьте, что web и backend доступны по HTTPS.";
   }
   if (error instanceof ApiError) {
+    if (error.message === "Proxy request failed") {
+      const details = (error.details as any)?.details;
+      if (typeof details === "string" && details.length > 0) {
+        return `Ошибка прокси: ${details}`;
+      }
+    }
     return error.message;
   }
   if (error instanceof Error) {
