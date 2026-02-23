@@ -12,4 +12,4 @@ COPY src ./src
 
 EXPOSE 4000
 
-CMD ["sh", "-c", "npx prisma migrate deploy || npx prisma db push && npm run prisma:seed || true && npm run dev"]
+CMD ["sh", "-c", "npx prisma generate && (npx prisma migrate deploy || npx prisma db push) && (npm run prisma:seed || true) && npm run dev"]

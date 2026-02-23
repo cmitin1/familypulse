@@ -1,8 +1,10 @@
 import { Markup, Telegraf } from "telegraf";
-import { Prisma, SourceType } from "@prisma/client";
+import { AiSuggestionStatus, Prisma, SourceType } from "@prisma/client";
 import { config } from "./config.js";
 import { prisma } from "./db.js";
-import { awardPointsIdempotent, buildDigestText } from "./services.js";
+import { awardPointsIdempotent, buildDigestText, localDateStart } from "./services.js";
+import { buildDigestBotText, buildTodayBotText } from "./modules/ai/services/ai-bot-text.service.js";
+import { ensureAiChatConnection, persistTelegramIncomingMessage } from "./modules/ai/services/telegram-ingestion.service.js";
 
 let botInstance: Telegraf | null = null;
 
@@ -24,7 +26,40 @@ async function resolveOwnerActiveHome(telegramUserId: string) {
   return { user, home: member.home };
 }
 
+async function resolveActiveHomeMember(telegramUserId: string) {
+  const user = await prisma.user.findUnique({ where: { telegramId: telegramUserId } });
+  if (!user?.activeHomeId) return null;
+  const member = await prisma.homeMember.findUnique({
+    where: { homeId_userId: { homeId: user.activeHomeId, userId: user.id } },
+    include: { home: true }
+  });
+  if (!member) return null;
+  return { user, home: member.home, role: member.role };
+}
+
+async function ensureChatAccess(homeId: string, chatId: string, chatType: string | undefined) {
+  if (chatType === "private") {
+    return true;
+  }
+  const link = await prisma.chatLink.findUnique({
+    where: { homeId_telegramChatId: { homeId, telegramChatId: chatId } },
+    select: { id: true, enabled: true }
+  });
+  return Boolean(link?.enabled);
+}
+
 function setupBot(bot: Telegraf) {
+  bot.use(async (ctx, next) => {
+    try {
+      if ("message" in ctx.update) {
+        await persistTelegramIncomingMessage((ctx.update as any).message);
+      }
+    } catch (error) {
+      console.error("[AI] Telegram message ingest failed", error instanceof Error ? error.message : error);
+    }
+    await next();
+  });
+
   bot.start(async (ctx) => {
     await ctx.reply("FamilyPulse готов. Откройте Mini App:", {
       reply_markup: {
@@ -42,7 +77,7 @@ function setupBot(bot: Telegraf) {
   });
 
   bot.command("help", async (ctx) => {
-    await ctx.reply("/start /invite /link /digest /help");
+    await ctx.reply("/start /invite /link /ai_on /ai_off /today /digest /ai_tasks /help");
   });
 
   bot.command("invite", async (ctx) => {
@@ -77,6 +112,17 @@ function setupBot(bot: Telegraf) {
       return;
     }
     const chatId = String(ctx.chat?.id ?? "");
+    const linkedToAnotherHome = await prisma.chatLink.findFirst({
+      where: {
+        telegramChatId: chatId,
+        homeId: { not: owner.home.id }
+      },
+      select: { homeId: true }
+    });
+    if (linkedToAnotherHome) {
+      await ctx.reply("Этот чат уже привязан к другому дому. Сначала отвяжите его там.");
+      return;
+    }
     await prisma.chatLink.upsert({
       where: { homeId_telegramChatId: { homeId: owner.home.id, telegramChatId: chatId } },
       create: {
@@ -86,25 +132,137 @@ function setupBot(bot: Telegraf) {
       },
       update: { enabled: true }
     });
-    await ctx.reply(`Чат привязан к дому "${owner.home.name}".`);
+    await ensureAiChatConnection({
+      homeId: owner.home.id,
+      telegramChatId: chatId,
+      chatTitle: "title" in (ctx.chat ?? {}) ? (ctx.chat as any).title ?? null : null,
+      enabled: false
+    });
+    await ctx.reply(`Чат привязан к дому "${owner.home.name}". AI-анализ выключен по умолчанию. Включите его командой /ai_on.`);
+  });
+
+  bot.command("ai_on", async (ctx) => {
+    if (ctx.chat?.type === "private") {
+      await ctx.reply("Команду /ai_on используйте в семейной группе.");
+      return;
+    }
+    const owner = await resolveOwnerActiveHome(String(ctx.from?.id ?? ""));
+    if (!owner) {
+      await ctx.reply("Только owner с активным домом может включить AI-анализ.");
+      return;
+    }
+    const chatId = String(ctx.chat?.id ?? "");
+    const link = await prisma.chatLink.findUnique({
+      where: { homeId_telegramChatId: { homeId: owner.home.id, telegramChatId: chatId } },
+      select: { id: true, enabled: true }
+    });
+    if (!link?.enabled) {
+      await ctx.reply("Сначала привяжите этот чат к дому командой /link.");
+      return;
+    }
+    await ensureAiChatConnection({
+      homeId: owner.home.id,
+      telegramChatId: chatId,
+      chatTitle: "title" in (ctx.chat ?? {}) ? (ctx.chat as any).title ?? null : null,
+      enabled: true
+    });
+    await ctx.reply("AI-анализ чата включен ✅");
+  });
+
+  bot.command("ai_off", async (ctx) => {
+    if (ctx.chat?.type === "private") {
+      await ctx.reply("Команду /ai_off используйте в семейной группе.");
+      return;
+    }
+    const owner = await resolveOwnerActiveHome(String(ctx.from?.id ?? ""));
+    if (!owner) {
+      await ctx.reply("Только owner с активным домом может выключить AI-анализ.");
+      return;
+    }
+    const chatId = String(ctx.chat?.id ?? "");
+    const link = await prisma.chatLink.findUnique({
+      where: { homeId_telegramChatId: { homeId: owner.home.id, telegramChatId: chatId } },
+      select: { id: true, enabled: true }
+    });
+    if (!link?.enabled) {
+      await ctx.reply("Этот чат не привязан к текущему дому.");
+      return;
+    }
+    await ensureAiChatConnection({
+      homeId: owner.home.id,
+      telegramChatId: chatId,
+      chatTitle: "title" in (ctx.chat ?? {}) ? (ctx.chat as any).title ?? null : null,
+      enabled: false
+    });
+    await ctx.reply("AI-анализ чата выключен ⏸️");
+  });
+
+  bot.command("today", async (ctx) => {
+    const member = await resolveActiveHomeMember(String(ctx.from?.id ?? ""));
+    if (!member) {
+      await ctx.reply("Нужен активный дом в FamilyPulse.");
+      return;
+    }
+    const chatId = String(ctx.chat?.id ?? "");
+    const allowed = await ensureChatAccess(member.home.id, chatId, ctx.chat?.type);
+    if (!allowed) {
+      await ctx.reply("Команда доступна только в личном чате с ботом или в привязанной семейной группе.");
+      return;
+    }
+    if (!config.aiFeatureEnabled) {
+      const classic = await buildDigestText(member.home.id, member.home.timezone);
+      await ctx.reply(`${classic}\n\nAI-модуль отключен.`);
+      return;
+    }
+    const text = await buildTodayBotText(member.home.id, member.home.timezone);
+    await ctx.reply(text);
   });
 
   bot.command("digest", async (ctx) => {
+    const member = await resolveActiveHomeMember(String(ctx.from?.id ?? ""));
+    if (!member) {
+      await ctx.reply("Нужен активный дом в FamilyPulse.");
+      return;
+    }
+    const chatId = String(ctx.chat?.id ?? "");
+    const allowed = await ensureChatAccess(member.home.id, chatId, ctx.chat?.type);
+    if (!allowed) {
+      await ctx.reply("Команда доступна только в личном чате с ботом или в привязанной семейной группе.");
+      return;
+    }
+    const text = config.aiFeatureEnabled
+      ? await buildDigestBotText(member.home.id, member.home.timezone)
+      : `${await buildDigestText(member.home.id, member.home.timezone)}\n\nAI-модуль отключен.`;
+    await ctx.reply(text);
+  });
+
+  bot.command("ai_tasks", async (ctx) => {
     const owner = await resolveOwnerActiveHome(String(ctx.from?.id ?? ""));
     if (!owner) {
       await ctx.reply("Только owner с активным домом.");
       return;
     }
-    const links = await prisma.chatLink.findMany({ where: { homeId: owner.home.id, enabled: true } });
-    const text = await buildDigestText(owner.home.id, owner.home.timezone);
-    if (!links.length) {
-      await ctx.reply("Нет привязанных групп. Используйте /link в группе.");
+    const chatId = String(ctx.chat?.id ?? "");
+    const allowed = await ensureChatAccess(owner.home.id, chatId, ctx.chat?.type);
+    if (!allowed) {
+      await ctx.reply("Команда доступна только в личном чате с ботом или в привязанной семейной группе.");
       return;
     }
-    for (const link of links) {
-      await bot.telegram.sendMessage(link.telegramChatId, text);
+    if (!config.aiFeatureEnabled) {
+      await ctx.reply("AI-модуль отключен.");
+      return;
     }
-    await ctx.reply("Дайджест отправлен.");
+    const rows = await prisma.aiSuggestion.findMany({
+      where: { homeId: owner.home.id, status: AiSuggestionStatus.PENDING },
+      orderBy: { createdAt: "desc" },
+      take: 10
+    });
+    if (!rows.length) {
+      await ctx.reply("AI Inbox пуст: pending-кандидатов нет.");
+      return;
+    }
+    const text = rows.map((item, idx) => `${idx + 1}. [${item.type.toLowerCase()}] ${item.title}`).join("\n");
+    await ctx.reply(`AI Inbox (pending):\n${text}`);
   });
 
   bot.action(/checkin:(.+):(.+)/, async (ctx) => {
@@ -117,14 +275,15 @@ function setupBot(bot: Telegraf) {
       return;
     }
     const membership = await prisma.homeMember.findUnique({
-      where: { homeId_userId: { homeId, userId: user.id } }
+      where: { homeId_userId: { homeId, userId: user.id } },
+      include: { home: { select: { timezone: true } } }
     });
     if (!membership) {
       await ctx.answerCbQuery("Вы не состоите в этом доме", { show_alert: true });
       return;
     }
 
-    const date = new Date(`${dateYmd}T00:00:00.000Z`);
+    const date = localDateStart(dateYmd, membership.home.timezone);
     try {
       await prisma.streak.create({
         data: { homeId, date, closedById: user.id }
@@ -145,6 +304,7 @@ function setupBot(bot: Telegraf) {
     });
     await ctx.answerCbQuery("День закрыт ✅");
   });
+
 }
 
 export function startBot() {

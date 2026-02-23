@@ -32,6 +32,13 @@ function int(name: string, defaultValue: number): number {
   return Number.isFinite(parsed) ? parsed : defaultValue;
 }
 
+function boundedInt(name: string, defaultValue: number, min: number, max: number): number {
+  const value = int(name, defaultValue);
+  if (value < min) return min;
+  if (value > max) return max;
+  return value;
+}
+
 export const config = {
   port: Number(process.env.PORT ?? 4000),
   nodeEnv: process.env.NODE_ENV ?? "development",
@@ -49,5 +56,13 @@ export const config = {
   telegramMiniAppName: process.env.TELEGRAM_MINI_APP_NAME ?? "familypulse",
   miniAppUrl: required("MINI_APP_URL"),
   backendUrl: required("BACKEND_URL"),
-  corsOrigin: process.env.CORS_ORIGIN ?? "*"
+  corsOrigin: process.env.CORS_ORIGIN ?? "*",
+  aiFeatureEnabled: bool("AI_FEATURE_ENABLED", false),
+  aiChatAnalysisEnabled: bool("AI_CHAT_ANALYSIS_ENABLED", false),
+  aiChatAnalysisBatchLimit: boundedInt("AI_CHAT_ANALYSIS_BATCH_LIMIT", 100, 1, 500),
+  aiChatPromptVersion: process.env.AI_CHAT_PROMPT_VERSION ?? "v1",
+  openrouterApiKey: optional("OPENROUTER_API_KEY"),
+  openrouterBaseUrl: process.env.OPENROUTER_BASE_URL ?? "https://openrouter.ai/api/v1",
+  openrouterModelExtract: process.env.OPENROUTER_MODEL_EXTRACT ?? "openai/gpt-4o-mini",
+  openrouterModelSummary: process.env.OPENROUTER_MODEL_SUMMARY ?? process.env.OPENROUTER_MODEL_EXTRACT ?? "openai/gpt-4o-mini"
 };

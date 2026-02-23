@@ -88,7 +88,7 @@ export default function HomePage() {
       </Card>
       <Card className="space-y-2">
         <h2 className="text-base font-semibold">Войти в дом по инвайт-коду</h2>
-        <Input value={joinCode} onChange={(e) => setJoinCode(e.target.value)} placeholder="Введите invite code" />
+        <Input value={joinCode} onChange={(e) => setJoinCode(e.target.value)} placeholder="Введите инвайт-код" />
         <Button
           variant="outline"
           onClick={async () => {

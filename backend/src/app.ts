@@ -8,6 +8,7 @@ import { syncCalendarFeed } from "./calendar.js";
 import { config } from "./config.js";
 import { prisma } from "./db.js";
 import { AuthedRequest, HomeRequest, requireAuth, requireHome } from "./middleware.js";
+import aiRouter from "./modules/ai/routes/ai.routes.js";
 import {
   awardPointsIdempotent,
   ensureTodayRoutineInstances,
@@ -227,6 +228,7 @@ app.post("/invites/join", async (req, res) => {
 });
 
 app.use(requireHome);
+app.use("/ai", aiRouter);
 
 function normalizeIcsUrl(input: string): string {
   const raw = input.trim();
@@ -643,10 +645,13 @@ app.get("/tasks", async (req, res) => {
 
   const where: any = { homeId };
   if (scope === "mine") {
-    where.OR = [{ assigneeId: userId }, { assignees: { some: { userId } } }];
+    where.AND = [...(where.AND ?? []), { OR: [{ assigneeId: userId }, { assignees: { some: { userId } } }] }];
   }
   if (assigneeIdRaw) {
-    where.OR = [{ assigneeId: assigneeIdRaw }, { assignees: { some: { userId: assigneeIdRaw } } }];
+    where.AND = [
+      ...(where.AND ?? []),
+      { OR: [{ assigneeId: assigneeIdRaw }, { assignees: { some: { userId: assigneeIdRaw } } }] }
+    ];
   }
   if (statusRaw === "open") where.status = TaskStatus.OPEN;
   if (statusRaw === "done") where.status = TaskStatus.DONE;

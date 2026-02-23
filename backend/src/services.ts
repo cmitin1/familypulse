@@ -40,11 +40,16 @@ export async function awardPointsIdempotent(input: {
   }
 }
 
-function shouldRoutineRunToday(daysOfWeek: number[], scheduleType: RoutineScheduleType, date: Date): boolean {
+function weekdayFromYmd(dateYmd: string): number {
+  const [year, month, day] = dateYmd.split("-").map((part) => Number(part));
+  return new Date(Date.UTC(year, (month ?? 1) - 1, day ?? 1)).getUTCDay();
+}
+
+function shouldRoutineRunToday(daysOfWeek: number[], scheduleType: RoutineScheduleType, dateYmd: string): boolean {
   if (scheduleType === "DAILY") {
     return true;
   }
-  const day = date.getUTCDay();
+  const day = weekdayFromYmd(dateYmd);
   return daysOfWeek.includes(day);
 }
 
@@ -62,14 +67,21 @@ async function assignRotate(homeId: string, dateYmd: string): Promise<string | n
 }
 
 export async function ensureTodayRoutineInstances(homeId: string, dateYmd: string) {
-  const targetDate = new Date(`${dateYmd}T00:00:00.000Z`);
+  const home = await prisma.home.findUnique({
+    where: { id: homeId },
+    select: { timezone: true }
+  });
+  if (!home) {
+    return;
+  }
+  const targetDate = localDateStart(dateYmd, home.timezone);
   const routines = await prisma.routine.findMany({
     where: { homeId, isActive: true },
     orderBy: { createdAt: "asc" }
   });
 
   for (const routine of routines) {
-    if (!shouldRoutineRunToday(routine.daysOfWeek, routine.scheduleType, targetDate)) {
+    if (!shouldRoutineRunToday(routine.daysOfWeek, routine.scheduleType, dateYmd)) {
       continue;
     }
 

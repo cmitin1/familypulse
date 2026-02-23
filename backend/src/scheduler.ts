@@ -6,6 +6,9 @@ import { syncAllEnabledFeeds } from "./calendar.js";
 import { config } from "./config.js";
 import { prisma } from "./db.js";
 import { buildDigestText } from "./services.js";
+import { AiAnalysisJobService } from "./modules/ai/services/ai-analysis.job.js";
+
+const SCHEDULER_LOCK_KEY = 90422001;
 
 function toYmd(now: Date, timezone: string): string {
   return formatInTimeZone(now, timezone, "yyyy-MM-dd");
@@ -83,49 +86,81 @@ async function sendDeadlineReminder(bot: Telegraf, link: { id: string; homeId: s
 
 export function startScheduler(options?: { bot?: Telegraf | null }) {
   let tick = 0;
+  const aiAnalysisJob = new AiAnalysisJobService();
   const mainTask = cron.schedule("* * * * *", async () => {
-    const links = await prisma.chatLink.findMany({
-      where: { enabled: true },
-      include: { home: true }
-    });
-
-    tick += 1;
-    const shouldSyncFeeds = tick % Math.max(1, config.calendarSyncIntervalMinutes) === 0;
-    if (shouldSyncFeeds) {
-      await syncAllEnabledFeeds();
+    const lockRows = await prisma.$queryRaw<Array<{ locked: boolean }>>`
+      SELECT pg_try_advisory_lock(${SCHEDULER_LOCK_KEY}) AS locked
+    `;
+    const locked = Boolean(lockRows?.[0]?.locked);
+    if (!locked) {
+      return;
     }
 
-    for (const link of links) {
-      const tz = link.home.timezone;
-      const now = new Date();
-      const hhmm = formatInTimeZone(now, tz, "HH:mm");
-      const ymd = formatInTimeZone(now, tz, "yyyy-MM-dd");
-      const bot = options?.bot ?? null;
+    try {
+      const links = await prisma.chatLink.findMany({
+        where: { enabled: true },
+        include: { home: true }
+      });
 
-      if (bot && hhmm === "09:00" && link.lastDigestYmd !== ymd) {
-        const text = await buildDigestText(link.homeId, tz, now);
-        await bot.telegram.sendMessage(link.telegramChatId, text);
-        await prisma.chatLink.update({
-          where: { id: link.id },
-          data: { lastDigestYmd: ymd }
-        });
+      tick += 1;
+      const shouldSyncFeeds = tick % Math.max(1, config.calendarSyncIntervalMinutes) === 0;
+      const shouldRunAiAnalysis = tick % 60 === 0;
+      if (shouldSyncFeeds) {
+        await syncAllEnabledFeeds();
+      }
+      if (shouldRunAiAnalysis) {
+        try {
+          await aiAnalysisJob.runHourlyAnalysis();
+        } catch (error) {
+          console.error("[AI] Scheduler tick failed", error instanceof Error ? error.message : error);
+        }
       }
 
-      if (bot && hhmm === config.checkinTime && link.lastCheckinYmd !== ymd) {
-        await bot.telegram.sendMessage(
-          link.telegramChatId,
-          `FamilyPulse: вечерний чек-ин (${ymd})`,
-          checkinKeyboard(link.homeId, ymd)
-        );
-        await prisma.chatLink.update({
-          where: { id: link.id },
-          data: { lastCheckinYmd: ymd }
-        });
-      }
+      for (const link of links) {
+        try {
+          const tz = link.home.timezone;
+          const now = new Date();
+          const hhmm = formatInTimeZone(now, tz, "HH:mm");
+          const ymd = formatInTimeZone(now, tz, "yyyy-MM-dd");
+          const bot = options?.bot ?? null;
 
-      if (bot) {
-        await sendDeadlineReminder(bot, link, tz);
+          if (bot && hhmm === "09:00" && link.lastDigestYmd !== ymd) {
+            const text = await buildDigestText(link.homeId, tz, now);
+            await bot.telegram.sendMessage(link.telegramChatId, text);
+            await prisma.chatLink.update({
+              where: { id: link.id },
+              data: { lastDigestYmd: ymd }
+            });
+          }
+
+          if (bot && hhmm === config.checkinTime && link.lastCheckinYmd !== ymd) {
+            await bot.telegram.sendMessage(
+              link.telegramChatId,
+              `FamilyPulse: вечерний чек-ин (${ymd})`,
+              checkinKeyboard(link.homeId, ymd)
+            );
+            await prisma.chatLink.update({
+              where: { id: link.id },
+              data: { lastCheckinYmd: ymd }
+            });
+          }
+
+          if (bot) {
+            await sendDeadlineReminder(bot, link, tz);
+          }
+        } catch (error) {
+          console.error("[Scheduler] Link processing failed", {
+            linkId: link.id,
+            homeId: link.homeId,
+            chatId: link.telegramChatId,
+            error: error instanceof Error ? error.message : String(error)
+          });
+        }
       }
+    } finally {
+      await prisma.$queryRaw`
+        SELECT pg_advisory_unlock(${SCHEDULER_LOCK_KEY})
+      `;
     }
   });
 

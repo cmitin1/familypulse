@@ -154,5 +154,22 @@ export const api = {
   updateEvent: (token: string, id: string, payload: any) => request<any>(`/events/${id}`, { method: "PATCH", token, body: payload }),
   deleteEvent: (token: string, id: string) => request<any>(`/events/${id}`, { method: "DELETE", token }),
   getScoreboard: (token: string, period: "week" | "month" = "week") =>
-    request<any>(withQuery("/scoreboard", { period }), { token })
+    request<any>(withQuery("/scoreboard", { period }), { token }),
+  getAiSuggestions: (
+    token: string,
+    query?: {
+      status?: "pending" | "approved" | "rejected" | "ignored";
+      type?: "task" | "event" | "question";
+      limit?: number;
+      cursor?: string;
+    }
+  ) => request<any>(withQuery("/ai/suggestions", query), { token }),
+  approveAiSuggestion: (token: string, id: string) =>
+    request<any>(`/ai/suggestions/${id}/approve`, { method: "POST", token, body: {} }),
+  rejectAiSuggestion: (token: string, id: string) =>
+    request<any>(`/ai/suggestions/${id}/reject`, { method: "POST", token, body: {} }),
+  ignoreAiSuggestion: (token: string, id: string) =>
+    request<any>(`/ai/suggestions/${id}/ignore`, { method: "POST", token, body: {} }),
+  getAiTodaySummary: (token: string) => request<any>("/ai/summary/today", { token }),
+  getAiDigestSummary: (token: string, hours = 24) => request<any>(withQuery("/ai/summary/digest", { hours }), { token })
 };

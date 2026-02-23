@@ -90,7 +90,7 @@ export function TaskCard({
           </div>
         </div>
         <Badge variant={dueBadgeVariant(diff)} className="shrink-0">
-          {isDone ? "done" : "open"}
+          {isDone ? "выполнено" : "открыто"}
         </Badge>
         <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
           Ред.

@@ -43,6 +43,31 @@ enum EventSource {
   ICS
 }
 
+enum AiExtractionRunStatus {
+  PENDING
+  SUCCESS
+  ERROR
+}
+
+enum AiSuggestionType {
+  TASK
+  EVENT
+  QUESTION
+}
+
+enum AiSuggestionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  IGNORED
+}
+
+enum AiAssigneeMode {
+  SINGLE
+  ALL
+  UNASSIGNED
+}
+
 model User {
   id             String       @id @default(cuid())
   telegramId     String       @unique
@@ -59,6 +84,7 @@ model User {
   scoreEvents    ScoreEvent[]
   ownedEvents    Event[]      @relation("EventOwner")
   eventParticipants EventParticipant[]
+  aiApprovedSuggestions AiSuggestion[]
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   assignedRoutineInstances RoutineInstance[] @relation("RoutineInstanceAssignee")
@@ -79,6 +105,9 @@ model Home {
   calendarFeeds  CalendarFeed[]
   calendarEvents CalendarEvent[]
   events         Event[]
+  aiChatConnections AiChatConnection[]
+  aiExtractionRuns AiExtractionRun[]
+  aiSuggestions  AiSuggestion[]
   activeUsers    User[]       @relation("ActiveHome")
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
@@ -285,4 +314,96 @@ model CalendarEvent {
   @@unique([feedId, uid, startAt])
   @@index([homeId, startAt])
   @@index([feedId, startAt])
+}
+
+model TelegramMessage {
+  id                        String   @id @default(cuid())
+  telegramChatId            String
+  telegramMessageId         Int
+  telegramUserId            String?
+  senderName                String?
+  username                  String?
+  text                      String?
+  rawType                   String
+  sentAt                    DateTime
+  replyToTelegramMessageId  Int?
+  rawJson                   Json?
+  createdAt                 DateTime @default(now())
+
+  @@unique([telegramChatId, telegramMessageId])
+  @@index([telegramChatId, sentAt])
+  @@index([telegramChatId, telegramMessageId])
+}
+
+model AiChatConnection {
+  id                    String   @id @default(cuid())
+  homeId                String
+  telegramChatId        String
+  chatTitle             String?
+  isEnabled             Boolean  @default(false)
+  analysisIntervalMinutes Int    @default(60)
+  lastAnalyzedAt        DateTime?
+  lastAnalyzedMessageId Int?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  home                  Home     @relation(fields: [homeId], references: [id], onDelete: Cascade)
+  extractionRuns        AiExtractionRun[]
+
+  @@unique([homeId, telegramChatId])
+  @@index([isEnabled, updatedAt])
+}
+
+model AiExtractionRun {
+  id                  String              @id @default(cuid())
+  homeId              String
+  aiChatConnectionId  String
+  status              AiExtractionRunStatus @default(PENDING)
+  model               String
+  provider            String
+  promptVersion       String
+  periodStart         DateTime
+  periodEnd           DateTime
+  messagesCount       Int
+  inputTokens         Int?
+  outputTokens        Int?
+  costUsd             Decimal?            @db.Decimal(10, 6)
+  rawResponse         Json?
+  errorMessage        String?
+  createdAt           DateTime            @default(now())
+  finishedAt          DateTime?
+  home                Home                @relation(fields: [homeId], references: [id], onDelete: Cascade)
+  chatConnection      AiChatConnection    @relation(fields: [aiChatConnectionId], references: [id], onDelete: Cascade)
+  suggestions         AiSuggestion[]
+
+  @@index([homeId, createdAt])
+  @@index([aiChatConnectionId, createdAt])
+}
+
+model AiSuggestion {
+  id                      String            @id @default(cuid())
+  homeId                  String
+  sourceChatId            String
+  type                    AiSuggestionType
+  title                   String
+  description             String?
+  status                  AiSuggestionStatus @default(PENDING)
+  confidence              Float?
+  proposedAssigneeMode    AiAssigneeMode?
+  proposedAssigneeUserIds Json?
+  proposedDueAt           DateTime?
+  proposedStartAt         DateTime?
+  proposedEndAt           DateTime?
+  sourceMessageRefs       Json
+  dedupKey                String?
+  aiExtractionRunId       String?
+  approvedByUserId        String?
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @updatedAt
+  home                    Home              @relation(fields: [homeId], references: [id], onDelete: Cascade)
+  extractionRun           AiExtractionRun?  @relation(fields: [aiExtractionRunId], references: [id], onDelete: SetNull)
+  approvedBy              User?             @relation(fields: [approvedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([homeId, status, createdAt(sort: Desc)])
+  @@index([homeId, type, status])
+  @@index([dedupKey])
 }
