@@ -143,7 +143,7 @@ app.post("/homes/switch", async (req, res) => {
   return res.json({ ok: true, activeHomeId: parsed.data.homeId });
 });
 
-app.post("/invites", async (req, res) => {
+app.post("/invites", requireHome, async (req, res) => {
   const schema = z.object({
     maxUses: z.number().int().positive().optional(),
     expiresAt: z.string().datetime().optional()
