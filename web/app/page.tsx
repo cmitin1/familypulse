@@ -160,7 +160,7 @@ export default function TodayPage() {
       ]);
       setHome(currentHome);
       setToday(t);
-      setTasks(taskRows);
+      setTasks(taskFilter === "today" ? (t?.tasks ?? []) : taskRows);
       setSummary(summaryRows);
     })
       .then(() => {
@@ -205,7 +205,7 @@ export default function TodayPage() {
         ]);
         setHome(currentHome);
         setToday(t);
-        setTasks(taskRows);
+        setTasks(taskFilter === "today" ? (t?.tasks ?? []) : taskRows);
         setSummary(summaryRows);
       });
       setError("");
