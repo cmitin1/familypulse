@@ -78,14 +78,6 @@ export default function TasksPage() {
                   setError(getErrorMessage(err));
                 }
               }}
-              onReassign={async (id, assignee) => {
-                try {
-                  await api.updateTask(token, id, { assigneeId: assignee });
-                  await load(token);
-                } catch (err) {
-                  setError(getErrorMessage(err));
-                }
-              }}
               onUpdate={async (id, payload) => {
                 try {
                   await api.updateTask(token, id, payload);
@@ -106,7 +98,7 @@ export default function TasksPage() {
           if (!token) return;
           await api.createTask(token, {
             title: payload.title,
-            assigneeId: payload.assigneeId ?? undefined,
+            assigneeIds: payload.assigneeIds ?? undefined,
             dueDate: payload.dueDate ?? undefined,
             points: 5
           });

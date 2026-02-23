@@ -137,6 +137,22 @@ export const api = {
   syncCalendarFeed: (token: string, id: string) => request<any>(`/calendar/feeds/${id}/sync`, { method: "POST", token }),
   getCalendarEvents: (token: string, from: string, to: string, includeTasks = true) =>
     request<any>(withQuery("/calendar/events", { from, to, includeTasks }), { token }),
+  getEvents: (token: string, from: string, to: string) => request<any>(withQuery("/events", { from, to }), { token }),
+  getEvent: (token: string, id: string) => request<any>(`/events/${id}`, { token }),
+  createEvent: (
+    token: string,
+    payload: {
+      title: string;
+      description?: string;
+      startAt: string;
+      endAt: string;
+      allDay?: boolean;
+      participantIds?: string[];
+      colorTag?: string;
+    }
+  ) => request<any>("/events", { method: "POST", token, body: payload }),
+  updateEvent: (token: string, id: string, payload: any) => request<any>(`/events/${id}`, { method: "PATCH", token, body: payload }),
+  deleteEvent: (token: string, id: string) => request<any>(`/events/${id}`, { method: "DELETE", token }),
   getScoreboard: (token: string, period: "week" | "month" = "week") =>
     request<any>(withQuery("/scoreboard", { period }), { token })
 };

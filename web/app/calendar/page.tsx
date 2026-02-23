@@ -29,11 +29,21 @@ function monthDays(reference: Date) {
   return { start, end, days, firstWeekdayMondayBased };
 }
 
+const personalPalette = ["bg-emerald-500", "bg-pink-500", "bg-violet-500", "bg-cyan-500"];
+
+function colorClassByUserId(userId?: string) {
+  if (!userId) return "bg-emerald-500";
+  let hash = 0;
+  for (let i = 0; i < userId.length; i += 1) hash = (hash * 31 + userId.charCodeAt(i)) % 997;
+  return personalPalette[hash % personalPalette.length] ?? "bg-emerald-500";
+}
+
 export default function CalendarPage() {
   const [token, setToken] = useState("");
   const [home, setHome] = useState<any>(null);
   const [feeds, setFeeds] = useState<any[]>([]);
   const [events, setEvents] = useState<any[]>([]);
+  const [manualEvents, setManualEvents] = useState<any[]>([]);
   const [tasksDue, setTasksDue] = useState<any[]>([]);
   const [view, setView] = useState<"month" | "agenda">("month");
   const [error, setError] = useState("");
@@ -47,14 +57,16 @@ export default function CalendarPage() {
   async function load(currentToken: string) {
     const from = ymd(monthMeta.start);
     const to = ymd(monthMeta.end);
-    const [homeData, feedsData, calendarData] = await Promise.all([
+    const [homeData, feedsData, calendarData, manual] = await Promise.all([
       api.getCurrentHome(currentToken),
       api.getCalendarFeeds(currentToken),
-      api.getCalendarEvents(currentToken, from, to, true)
+      api.getCalendarEvents(currentToken, from, to, true),
+      api.getEvents(currentToken, from, to)
     ]);
     setHome(homeData);
     setFeeds(feedsData);
     setEvents(calendarData.events ?? []);
+    setManualEvents(manual ?? []);
     setTasksDue(calendarData.tasksDue ?? []);
   }
 
@@ -66,7 +78,7 @@ export default function CalendarPage() {
   }, [monthMeta.start.getTime(), monthMeta.end.getTime()]);
 
   const selectedYmd = ymd(selectedDate);
-  const dayEvents = events.filter((event) => ymd(new Date(event.startAt)) === selectedYmd);
+  const dayEvents = [...events, ...manualEvents].filter((event) => ymd(new Date(event.startAt)) === selectedYmd);
   const dayTasks = tasksDue.filter((task) => task.dueDate && ymd(new Date(task.dueDate)) === selectedYmd);
 
   return (
@@ -106,6 +118,11 @@ export default function CalendarPage() {
               {monthMeta.days.map((day) => {
                 const key = ymd(day);
                 const count = events.filter((event) => ymd(new Date(event.startAt)) === key).length;
+                const dayManualEvents = manualEvents.filter((event) => ymd(new Date(event.startAt)) === key);
+                const manualCount = dayManualEvents.length;
+                const hasSharedManual = dayManualEvents.some((event) => (event.participants?.length ?? 0) > 1);
+                const hasPersonalManual = dayManualEvents.some((event) => (event.participants?.length ?? 0) <= 1);
+                const personalOwnerId = dayManualEvents.find((event) => (event.participants?.length ?? 0) <= 1)?.ownerId;
                 const taskCount = tasksDue.filter((task) => task.dueDate && ymd(new Date(task.dueDate)) === key).length;
                 return (
                   <button
@@ -115,7 +132,15 @@ export default function CalendarPage() {
                     onClick={() => setSelectedDate(day)}
                   >
                     <p className="text-xs font-medium">{day.getDate()}</p>
-                    <p className="text-[10px] text-muted-foreground">E:{count} T:{taskCount}</p>
+                    <div className="mt-1 flex items-center gap-1">
+                      {count > 0 ? <span className="h-1.5 w-1.5 rounded-full bg-sky-500" /> : null}
+                      {hasSharedManual ? <span className="h-1.5 w-1.5 rounded-full bg-amber-500" /> : null}
+                      {hasPersonalManual ? (
+                        <span className={`h-1.5 w-1.5 rounded-full ${colorClassByUserId(personalOwnerId)}`} />
+                      ) : null}
+                      {taskCount > 0 ? <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> : null}
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">E:{count + manualCount} T:{taskCount}</p>
                   </button>
                 );
               })}
@@ -123,14 +148,23 @@ export default function CalendarPage() {
           </TabsContent>
           <TabsContent value="agenda">
             <div className="space-y-2">
-              {events.length === 0 ? (
+              {[...events, ...manualEvents].length === 0 ? (
                 <p className="empty-state">Нет событий в выбранном диапазоне.</p>
               ) : (
-                events.map((event) => (
+                [...events, ...manualEvents].map((event) => (
                   <div key={event.id} className="rounded-lg border border-border p-3">
                     <p className="text-sm font-medium">{event.title}</p>
                     <p className="text-xs text-muted-foreground">{formatDateTime(event.startAt, home?.timezone || "UTC")}</p>
-                    <p className="text-xs text-muted-foreground">{event.feed?.title}</p>
+                    <div className="mt-1 flex items-center gap-1">
+                      {event.feed ? (
+                        <span className="h-2 w-2 rounded-full bg-sky-500" />
+                      ) : (event.participants?.length ?? 0) > 1 ? (
+                        <span className="h-2 w-2 rounded-full bg-amber-500" />
+                      ) : (
+                        <span className={`h-2 w-2 rounded-full ${colorClassByUserId(event.ownerId || event.owner?.id)}`} />
+                      )}
+                      <p className="text-xs text-muted-foreground">{event.feed?.title ?? "Ручное событие"}</p>
+                    </div>
                   </div>
                 ))
               )}
@@ -190,7 +224,7 @@ export default function CalendarPage() {
             <div key={feed.id} className="space-y-2 rounded-lg border border-border p-3">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-medium">{feed.title}</p>
-                <Badge variant={feed.isEnabled ? "success" : "outline"}>{feed.isEnabled ? "enabled" : "disabled"}</Badge>
+                <Badge variant={feed.isEnabled ? "success" : "outline"}>{feed.isEnabled ? "включен" : "отключен"}</Badge>
               </div>
               <p className="text-xs text-muted-foreground break-all">{feed.icsUrl}</p>
               <div className="grid grid-cols-3 gap-2">

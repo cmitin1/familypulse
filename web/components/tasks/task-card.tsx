@@ -18,6 +18,7 @@ type Task = {
   dueDate?: string | null;
   assigneeId?: string | null;
   assignee?: { id: string; firstName?: string | null; username?: string | null } | null;
+  assignees?: Array<{ user: { id: string; firstName?: string | null; username?: string | null } }>;
 };
 
 function dueBadgeVariant(diff: number | null) {
@@ -46,60 +47,53 @@ export function TaskCard({
   members,
   timezone,
   onDone,
-  onReassign,
   onUpdate
 }: {
   task: Task;
   members: Member[];
   timezone: string;
   onDone: (id: string) => Promise<void>;
-  onReassign: (id: string, assigneeId: string | null) => Promise<void>;
-  onUpdate: (id: string, payload: { title?: string; assigneeId?: string | null; dueDate?: string | null; status?: "OPEN" | "DONE" }) => Promise<void>;
+  onUpdate: (id: string, payload: { title?: string; assigneeIds?: string[]; dueDate?: string | null; status?: "OPEN" | "DONE" }) => Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
   const diff = daysUntilDue(task.dueDate, timezone);
-  const assigneeName = task.assignee?.firstName || task.assignee?.username || "Без исполнителя";
-  const initials = getInitials(assigneeName);
+  const assigneeUsers = task.assignees?.map((row) => row.user) ?? (task.assignee ? [task.assignee] : []);
+  const assigneeLabel =
+    assigneeUsers.length === 0
+      ? "Без исполнителя"
+      : assigneeUsers.length === 1
+        ? assigneeUsers[0]?.firstName || assigneeUsers[0]?.username || "Участник"
+        : `${assigneeUsers[0]?.firstName || assigneeUsers[0]?.username || "Участник"} +${assigneeUsers.length - 1}`;
+  const initials = getInitials(assigneeLabel);
   const isDone = task.status === "DONE";
 
   return (
-    <Card className="space-y-3 p-3.5">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-2.5">
+    <Card className="p-2.5">
+      <div className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          checked={isDone}
+          onChange={() => {
+            if (!isDone) void onDone(task.id);
+          }}
+          className="h-4 w-4"
+        />
+        <div className="flex min-w-0 flex-1 items-center gap-2">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold text-foreground">
             {initials}
           </div>
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-foreground">{task.title}</p>
-            <p className="text-xs text-muted-foreground">{assigneeName}</p>
+          <div className="min-w-0 flex-1">
+            <p className={`truncate text-sm font-semibold ${isDone ? "text-muted-foreground line-through" : "text-foreground"}`}>{task.title}</p>
+            <p className="truncate text-xs text-muted-foreground">
+              {assigneeLabel} • {dueText(diff)} • {formatDateTime(task.dueDate ?? null, timezone)}
+            </p>
           </div>
         </div>
-        <Badge variant={isDone ? "success" : "outline"}>{isDone ? "выполнена" : "открыта"}</Badge>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge variant={dueBadgeVariant(diff)}>{dueText(diff)}</Badge>
-        <span className="text-xs text-muted-foreground">{formatDateTime(task.dueDate ?? null, timezone)}</span>
-      </div>
-
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-        <Button size="sm" variant="outline" disabled={isDone} onClick={() => onDone(task.id)}>
-          Выполнено
-        </Button>
-        <select
-          className="h-11 rounded-lg border border-input bg-card px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          value={task.assigneeId ?? ""}
-          onChange={(e) => onReassign(task.id, e.target.value || null)}
-        >
-          <option value="">Без исп.</option>
-          {members.map((member) => (
-            <option key={member.user.id} value={member.user.id}>
-              {member.user.firstName || member.user.username || member.user.id}
-            </option>
-          ))}
-        </select>
-        <Button size="sm" onClick={() => setEditing(true)}>
-          Редактировать
+        <Badge variant={dueBadgeVariant(diff)} className="shrink-0">
+          {isDone ? "done" : "open"}
+        </Badge>
+        <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
+          Ред.
         </Button>
       </div>
       <TaskEditorSheet
@@ -108,7 +102,7 @@ export function TaskCard({
         members={members}
         initial={{
           title: task.title,
-          assigneeId: task.assigneeId ?? "",
+          assigneeIds: assigneeUsers.map((user) => user.id),
           dueDate: task.dueDate ?? null,
           status: task.status
         }}

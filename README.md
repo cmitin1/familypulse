@@ -35,6 +35,9 @@
 - `ScoreEvent`
 - `Streak`
 - `ChatLink`
+- `TaskAssignee`
+- `Event`
+- `EventParticipant`
 
 Обязательные уникальности:
 - `HomeMember(homeId, userId)`
@@ -66,9 +69,10 @@
 
 #### Tasks
 - `POST /tasks`
+- поддержка `assigneeIds[]` (несколько исполнителей + совместимость с `assigneeId`)
 - `GET /tasks?scope=mine|all&date=YYYY-MM-DD` + расширенные фильтры:
   - `from`, `to`, `status=open|done|all`, `assigneeId`, `overdue=true|false`, `noDueDate=true|false`
-- `PATCH /tasks/:id` (title/status/assigneeId/dueDate)
+- `PATCH /tasks/:id` (title/status/assigneeIds/dueDate/eventId)
 - `POST /tasks/:id/done` (идемпотентно, начисление очков через `ScoreEvent`)
 - `GET /tasks/summary/by-assignee?from=YYYY-MM-DD&to=YYYY-MM-DD`
 
@@ -79,6 +83,13 @@
 - `DELETE /calendar/feeds/:id`
 - `POST /calendar/feeds/:id/sync`
 - `GET /calendar/events?from=YYYY-MM-DD&to=YYYY-MM-DD&includeTasks=true|false`
+
+#### Events
+- `POST /events`
+- `GET /events?from=YYYY-MM-DD&to=YYYY-MM-DD`
+- `GET /events/:id`
+- `PATCH /events/:id`
+- `DELETE /events/:id`
 
 #### Routines
 - `POST /routines` (owner only, строгая валидация DAILY/WEEKLY + FIXED/ROTATE)
@@ -122,9 +133,10 @@
 ### 6) Mini App UI
 
 - `Onboarding` на главной: создать дом / войти по invite-коду.
-- `Today` как dashboard: переключение `mine/all`, прогресс, points, streak, быстрые фильтры и сводка задач по ответственным.
-- `Tasks`: единый `TaskCard`, создание/редактирование (title, assignee, dueDate, status), D-days и просрочка.
-- `Calendar`: month + agenda, события из ICS, задачи с дедлайнами по выбранной дате, управление feed’ами.
+- `Today` как dashboard: компактная шапка (дата/дом/mine-all), задачи на сегодня в приоритете, события на сегодня, быстрые фильтры, компактная строка прогресса.
+- `Tasks`: компактный `TaskRow`/`TaskCard`, мульти-исполнители, создание/редактирование (title, assignees, dueDate, status), D-days и просрочка.
+- `Calendar`: month + agenda, события из ICS + ручные события, цветные точки, задачи с дедлайнами по выбранной дате.
+- `Events`: отдельный раздел событий и карточка события с привязанными задачами.
 - `Routines`: создание (DAILY/WEEKLY, FIXED/ROTATE), toggle active.
 - `Home`: участники, инвайт, статус привязки группового чата, scoreboard.
 
@@ -191,6 +203,7 @@ ENABLE_BOT=false ENABLE_SCHEDULER=false docker compose up --build
 - Миграции:
   - `backend/prisma/migrations/0001_init/migration.sql`
   - `backend/prisma/migrations/20260223160000_calendar_and_deadline_notifications/migration.sql`
+  - `backend/prisma/migrations/20260224113000_events_and_multi_assignees/migration.sql`
 - Seed: `backend/prisma/seed.ts`
   - создаёт 2 demo-пользователя (`telegramId=10001`, `10002`)
   - создаёт demo-дом и 1 demo-задачу
@@ -213,6 +226,12 @@ ENABLE_BOT=false ENABLE_SCHEDULER=false docker compose up --build
 - Задача создаётся/редактируется с `dueDate`, в UI видны D-days и просрочка.
 - Быстрые фильтры на главной (`Просроченные`, `Сегодня`, `7 дней`, `Без дедлайна`) возвращают ожидаемые задачи.
 - Таблица сводки по ответственным показывает `open/overdue/dueSoon/doneToday`.
+- 2 пользователя в одном доме видят общие задачи/события.
+- В задаче можно выбрать 1/нескольких исполнителей, включая быстрое “Все”.
+- В `Today` отображаются и задачи, и события на сегодня.
+- В календаре месяца отображаются цветные точки на датах с событиями.
+- Можно создать событие-диапазон и добавить к нему задачи из event details.
+- В `Routines` кнопка переключения на русском: `Отключить`/`Включить`.
 
 ## Структура проекта
 

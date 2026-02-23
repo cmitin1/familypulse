@@ -84,7 +84,7 @@ export default function HomePage() {
         >
           Создать инвайт
         </Button>
-        {invite?.code ? <p className="text-sm text-foreground">Invite code: {invite.code}</p> : null}
+        {invite?.code ? <p className="text-sm text-foreground">Инвайт-код: {invite.code}</p> : null}
       </Card>
       <Card className="space-y-2">
         <h2 className="text-base font-semibold">Войти в дом по инвайт-коду</h2>

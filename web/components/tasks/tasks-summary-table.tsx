@@ -22,6 +22,7 @@ type Task = {
   dueDate?: string | null;
   assigneeId?: string | null;
   assignee?: { id: string; firstName?: string | null; username?: string | null } | null;
+  assignees?: Array<{ user: { id: string; firstName?: string | null; username?: string | null } }>;
 };
 
 type Member = {
@@ -34,7 +35,6 @@ export function TasksSummaryTable({
   members,
   timezone,
   onDone,
-  onReassign,
   onUpdate
 }: {
   rows: SummaryRow[];
@@ -42,12 +42,16 @@ export function TasksSummaryTable({
   members: Member[];
   timezone: string;
   onDone: (id: string) => Promise<void>;
-  onReassign: (id: string, assigneeId: string | null) => Promise<void>;
-  onUpdate: (id: string, payload: { title?: string; assigneeId?: string | null; dueDate?: string | null; status?: "OPEN" | "DONE" }) => Promise<void>;
+  onUpdate: (id: string, payload: { title?: string; assigneeIds?: string[]; dueDate?: string | null; status?: "OPEN" | "DONE" }) => Promise<void>;
 }) {
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
   const expandedTasks = useMemo(
-    () => tasks.filter((task) => task.assigneeId === expandedUserId),
+    () =>
+      tasks.filter(
+        (task) =>
+          task.assigneeId === expandedUserId ||
+          (task.assignees ?? []).some((assignee) => assignee.user.id === expandedUserId)
+      ),
     [tasks, expandedUserId]
   );
 
@@ -99,7 +103,6 @@ export function TasksSummaryTable({
                 members={members}
                 timezone={timezone}
                 onDone={onDone}
-                onReassign={onReassign}
                 onUpdate={onUpdate}
               />
             ))

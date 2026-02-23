@@ -13,9 +13,10 @@ type Member = {
 
 type TaskPayload = {
   title: string;
-  assigneeId: string | null;
+  assigneeIds: string[];
   dueDate: string | null;
   status: "OPEN" | "DONE";
+  eventId?: string | null;
 };
 
 export function TaskEditorSheet({
@@ -32,7 +33,7 @@ export function TaskEditorSheet({
   onSave: (payload: TaskPayload) => Promise<void>;
 }) {
   const [title, setTitle] = useState("");
-  const [assigneeId, setAssigneeId] = useState("");
+  const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [dueDate, setDueDate] = useState<string | null>(null);
   const [status, setStatus] = useState<"OPEN" | "DONE">("OPEN");
   const [saving, setSaving] = useState(false);
@@ -40,7 +41,7 @@ export function TaskEditorSheet({
   useEffect(() => {
     if (!open) return;
     setTitle(initial?.title ?? "");
-    setAssigneeId(initial?.assigneeId ?? "");
+    setAssigneeIds(initial?.assigneeIds ?? []);
     setDueDate(initial?.dueDate ?? null);
     setStatus(initial?.status ?? "OPEN");
   }, [open, initial]);
@@ -56,8 +57,8 @@ export function TaskEditorSheet({
           <Input placeholder="Например: вынести мусор" value={title} onChange={(e) => setTitle(e.target.value)} />
         </div>
         <div className="space-y-1.5">
-          <p className="field-label">Исполнитель</p>
-          <AssigneePicker members={members} value={assigneeId} onChange={setAssigneeId} />
+          <p className="field-label">Исполнители</p>
+          <AssigneePicker members={members} values={assigneeIds} onChange={setAssigneeIds} />
         </div>
         <div className="space-y-1.5">
           <p className="field-label">Дедлайн</p>
@@ -70,8 +71,8 @@ export function TaskEditorSheet({
             value={status}
             onChange={(e) => setStatus(e.target.value as "OPEN" | "DONE")}
           >
-            <option value="OPEN">OPEN</option>
-            <option value="DONE">DONE</option>
+            <option value="OPEN">Открыта</option>
+            <option value="DONE">Выполнена</option>
           </select>
         </div>
         <Button
@@ -81,7 +82,7 @@ export function TaskEditorSheet({
             try {
               await onSave({
                 title: title.trim(),
-                assigneeId: assigneeId || null,
+                assigneeIds,
                 dueDate,
                 status
               });

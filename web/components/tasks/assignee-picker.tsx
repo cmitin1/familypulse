@@ -6,25 +6,56 @@ type Member = {
 
 export function AssigneePicker({
   members,
-  value,
+  values,
   onChange
 }: {
   members: Member[];
-  value: string;
-  onChange: (value: string) => void;
+  values: string[];
+  onChange: (value: string[]) => void;
 }) {
+  const memberIds = members.map((member) => member.user.id);
+  const allSelected = memberIds.length > 0 && memberIds.every((id) => values.includes(id));
+
+  function toggleMember(userId: string) {
+    if (values.includes(userId)) {
+      onChange(values.filter((id) => id !== userId));
+    } else {
+      onChange([...values, userId]);
+    }
+  }
+
   return (
-    <select
-      className="h-11 w-full rounded-lg border border-input bg-card px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-    >
-      <option value="">Без исполнителя</option>
-      {members.map((member) => (
-        <option key={member.user.id} value={member.user.id}>
-          {member.user.firstName || member.user.username || member.user.id}
-        </option>
-      ))}
-    </select>
+    <div className="space-y-2 rounded-lg border border-input bg-card p-3">
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={allSelected}
+          onChange={(e) => onChange(e.target.checked ? memberIds : [])}
+        />
+        <span>Все</span>
+      </label>
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={values.length === 0}
+          onChange={(e) => {
+            if (e.target.checked) onChange([]);
+          }}
+        />
+        <span>Без исполнителя</span>
+      </label>
+      <div className="space-y-1">
+        {members.map((member) => (
+          <label key={member.user.id} className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={values.includes(member.user.id)}
+              onChange={() => toggleMember(member.user.id)}
+            />
+            <span>{member.user.firstName || member.user.username || member.user.id}</span>
+          </label>
+        ))}
+      </div>
+    </div>
   );
 }

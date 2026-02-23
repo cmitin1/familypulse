@@ -170,7 +170,7 @@ export default function RoutinesPage() {
                   }
                 }}
               >
-                {routine.isActive ? "Disable" : "Enable"}
+                {routine.isActive ? "Отключить" : "Включить"}
               </Button>
             </div>
           ))

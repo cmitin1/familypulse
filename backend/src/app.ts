@@ -359,12 +359,207 @@ app.get("/calendar/events", async (req, res) => {
         homeId,
         dueDate: { gte: start, lte: end }
       },
-      include: { assignee: { select: { id: true, firstName: true, username: true } } },
+      include: {
+        assignee: { select: { id: true, firstName: true, username: true } },
+        assignees: { include: { user: { select: { id: true, firstName: true, username: true } } } }
+      },
       orderBy: { dueDate: "asc" }
     });
   }
 
   return res.json({ events, tasksDue });
+});
+
+app.get("/events", async (req, res) => {
+  const schema = z.object({
+    from: ymdSchema,
+    to: ymdSchema
+  });
+  const parsed = schema.safeParse({
+    from: req.query.from,
+    to: req.query.to
+  });
+  if (!parsed.success) {
+    return zodBadRequest(res, parsed);
+  }
+  const { homeId } = (req as HomeRequest).context;
+  const home = await prisma.home.findUnique({ where: { id: homeId } });
+  if (!home) {
+    return res.status(404).json({ error: "Home not found" });
+  }
+  const start = localDateStart(parsed.data.from, home.timezone);
+  const end = localDateEnd(parsed.data.to, home.timezone);
+  const events = await prisma.event.findMany({
+    where: {
+      homeId,
+      AND: [{ startAt: { lte: end } }, { endAt: { gte: start } }]
+    },
+    include: {
+      owner: { select: { id: true, firstName: true, username: true } },
+      participants: { include: { user: { select: { id: true, firstName: true, username: true } } } }
+    },
+    orderBy: [{ startAt: "asc" }]
+  });
+  return res.json(events);
+});
+
+app.get("/events/:id", async (req, res) => {
+  const { homeId } = (req as HomeRequest).context;
+  const event = await prisma.event.findFirst({
+    where: { id: req.params.id, homeId },
+    include: {
+      owner: { select: { id: true, firstName: true, username: true } },
+      participants: { include: { user: { select: { id: true, firstName: true, username: true } } } },
+      tasks: {
+        include: {
+          assignee: { select: { id: true, firstName: true, username: true } },
+          assignees: { include: { user: { select: { id: true, firstName: true, username: true } } } }
+        },
+        orderBy: { createdAt: "desc" }
+      }
+    }
+  });
+  if (!event) {
+    return res.status(404).json({ error: "Event not found" });
+  }
+  return res.json(event);
+});
+
+app.post("/events", async (req, res) => {
+  const schema = z
+    .object({
+      title: z.string().trim().min(1),
+      description: z.string().trim().optional(),
+      startAt: z.string().datetime(),
+      endAt: z.string().datetime(),
+      allDay: z.boolean().optional(),
+      participantIds: z.array(z.string().min(1)).optional(),
+      colorTag: z.string().trim().optional()
+    })
+    .refine((value) => new Date(value.endAt) >= new Date(value.startAt), {
+      message: "endAt must be greater than or equal to startAt",
+      path: ["endAt"]
+    });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    return zodBadRequest(res, parsed);
+  }
+  const { homeId } = (req as HomeRequest).context;
+  const userId = (req as HomeRequest).user.id;
+  const participantIds = [...new Set(parsed.data.participantIds ?? [])];
+  if (participantIds.length > 0) {
+    const members = await prisma.homeMember.findMany({
+      where: { homeId, userId: { in: participantIds } },
+      select: { userId: true }
+    });
+    if (members.length !== participantIds.length) {
+      return res.status(400).json({ error: "Some participants are not members of this home" });
+    }
+  }
+  const created = await prisma.event.create({
+    data: {
+      homeId,
+      title: parsed.data.title,
+      description: parsed.data.description,
+      startAt: new Date(parsed.data.startAt),
+      endAt: new Date(parsed.data.endAt),
+      allDay: parsed.data.allDay ?? false,
+      ownerId: userId,
+      colorTag: parsed.data.colorTag,
+      participants: participantIds.length
+        ? {
+            create: participantIds.map((id) => ({ userId: id }))
+          }
+        : undefined
+    },
+    include: {
+      owner: { select: { id: true, firstName: true, username: true } },
+      participants: { include: { user: { select: { id: true, firstName: true, username: true } } } }
+    }
+  });
+  return res.status(201).json(created);
+});
+
+app.patch("/events/:id", async (req, res) => {
+  const schema = z
+    .object({
+      title: z.string().trim().min(1).optional(),
+      description: z.string().trim().nullable().optional(),
+      startAt: z.string().datetime().optional(),
+      endAt: z.string().datetime().optional(),
+      allDay: z.boolean().optional(),
+      participantIds: z.array(z.string().min(1)).optional(),
+      colorTag: z.string().trim().nullable().optional()
+    })
+    .refine(
+      (payload) =>
+        payload.title !== undefined ||
+        payload.description !== undefined ||
+        payload.startAt !== undefined ||
+        payload.endAt !== undefined ||
+        payload.allDay !== undefined ||
+        payload.participantIds !== undefined ||
+        payload.colorTag !== undefined,
+      { message: "Nothing to update" }
+    );
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    return zodBadRequest(res, parsed);
+  }
+  const { homeId } = (req as HomeRequest).context;
+  const event = await prisma.event.findFirst({ where: { id: req.params.id, homeId } });
+  if (!event) {
+    return res.status(404).json({ error: "Event not found" });
+  }
+  if (parsed.data.participantIds) {
+    const uniq = [...new Set(parsed.data.participantIds)];
+    const members = await prisma.homeMember.findMany({
+      where: { homeId, userId: { in: uniq } },
+      select: { userId: true }
+    });
+    if (members.length !== uniq.length) {
+      return res.status(400).json({ error: "Some participants are not members of this home" });
+    }
+  }
+  await prisma.event.update({
+    where: { id: event.id },
+    data: {
+      ...(parsed.data.title !== undefined ? { title: parsed.data.title } : {}),
+      ...(parsed.data.description !== undefined ? { description: parsed.data.description } : {}),
+      ...(parsed.data.startAt !== undefined ? { startAt: new Date(parsed.data.startAt) } : {}),
+      ...(parsed.data.endAt !== undefined ? { endAt: new Date(parsed.data.endAt) } : {}),
+      ...(parsed.data.allDay !== undefined ? { allDay: parsed.data.allDay } : {}),
+      ...(parsed.data.colorTag !== undefined ? { colorTag: parsed.data.colorTag } : {})
+    }
+  });
+  if (parsed.data.participantIds) {
+    await prisma.eventParticipant.deleteMany({ where: { eventId: event.id } });
+    const uniq = [...new Set(parsed.data.participantIds)];
+    if (uniq.length > 0) {
+      await prisma.eventParticipant.createMany({
+        data: uniq.map((userId) => ({ eventId: event.id, userId })),
+        skipDuplicates: true
+      });
+    }
+  }
+  const updated = await prisma.event.findUnique({
+    where: { id: event.id },
+    include: {
+      owner: { select: { id: true, firstName: true, username: true } },
+      participants: { include: { user: { select: { id: true, firstName: true, username: true } } } }
+    }
+  });
+  return res.json(updated);
+});
+
+app.delete("/events/:id", async (req, res) => {
+  const { homeId } = (req as HomeRequest).context;
+  const event = await prisma.event.findFirst({ where: { id: req.params.id, homeId } });
+  if (!event) {
+    return res.status(404).json({ error: "Event not found" });
+  }
+  await prisma.event.delete({ where: { id: event.id } });
+  return res.json({ ok: true });
 });
 
 app.post("/tasks", async (req, res) => {
@@ -373,6 +568,8 @@ app.post("/tasks", async (req, res) => {
     description: z.string().trim().optional(),
     dueDate: z.string().datetime().optional(),
     assigneeId: z.string().min(1).nullable().optional(),
+    assigneeIds: z.array(z.string().min(1)).optional(),
+    eventId: z.string().min(1).nullable().optional(),
     points: z.number().int().positive().optional()
   });
   const parsed = schema.safeParse(req.body);
@@ -380,25 +577,48 @@ app.post("/tasks", async (req, res) => {
     return zodBadRequest(res, parsed);
   }
   const { homeId } = (req as HomeRequest).context;
-  if (parsed.data.assigneeId) {
-    const assigneeMembership = await prisma.homeMember.findUnique({
-      where: { homeId_userId: { homeId, userId: parsed.data.assigneeId } }
-    });
-    if (!assigneeMembership) {
-      return res.status(400).json({ error: "Assignee is not a member of this home" });
+  const homeMembers = await prisma.homeMember.findMany({
+    where: { homeId },
+    select: { userId: true }
+  });
+  const memberIds = new Set(homeMembers.map((m) => m.userId));
+  const assigneeIds = [...new Set([...(parsed.data.assigneeIds ?? []), ...(parsed.data.assigneeId ? [parsed.data.assigneeId] : [])])];
+  const invalidAssignee = assigneeIds.find((id) => !memberIds.has(id));
+  if (invalidAssignee) {
+    return res.status(400).json({ error: "Assignee is not a member of this home" });
+  }
+  if (parsed.data.eventId) {
+    const event = await prisma.event.findFirst({ where: { id: parsed.data.eventId, homeId } });
+    if (!event) {
+      return res.status(400).json({ error: "Event not found in this home" });
     }
   }
+
   const task = await prisma.task.create({
     data: {
       homeId,
       title: parsed.data.title,
       description: parsed.data.description,
       dueDate: parsed.data.dueDate ? new Date(parsed.data.dueDate) : undefined,
-      assigneeId: parsed.data.assigneeId ?? undefined,
+      assigneeId: assigneeIds[0] ?? undefined,
+      eventId: parsed.data.eventId ?? undefined,
+      assignees: assigneeIds.length
+        ? {
+            create: assigneeIds.map((userId) => ({ userId }))
+          }
+        : undefined,
       points: parsed.data.points ?? 5
     }
   });
-  return res.status(201).json(task);
+  const hydrated = await prisma.task.findUnique({
+    where: { id: task.id },
+    include: {
+      assignee: { select: { id: true, firstName: true, username: true } },
+      assignees: { include: { user: { select: { id: true, firstName: true, username: true } } } },
+      event: { select: { id: true, title: true, startAt: true, endAt: true } }
+    }
+  });
+  return res.status(201).json(hydrated);
 });
 
 app.get("/tasks", async (req, res) => {
@@ -422,8 +642,12 @@ app.get("/tasks", async (req, res) => {
   const userId = (req as HomeRequest).user.id;
 
   const where: any = { homeId };
-  if (scope === "mine") where.assigneeId = userId;
-  if (assigneeIdRaw) where.assigneeId = assigneeIdRaw;
+  if (scope === "mine") {
+    where.OR = [{ assigneeId: userId }, { assignees: { some: { userId } } }];
+  }
+  if (assigneeIdRaw) {
+    where.OR = [{ assigneeId: assigneeIdRaw }, { assignees: { some: { userId: assigneeIdRaw } } }];
+  }
   if (statusRaw === "open") where.status = TaskStatus.OPEN;
   if (statusRaw === "done") where.status = TaskStatus.DONE;
 
@@ -469,7 +693,11 @@ app.get("/tasks", async (req, res) => {
 
   const tasks = await prisma.task.findMany({
     where,
-    include: { assignee: { select: { id: true, firstName: true, username: true } } },
+    include: {
+      assignee: { select: { id: true, firstName: true, username: true } },
+      assignees: { include: { user: { select: { id: true, firstName: true, username: true } } } },
+      event: { select: { id: true, title: true, startAt: true, endAt: true } }
+    },
     orderBy: [{ status: "asc" }, { createdAt: "desc" }]
   });
   return res.json(tasks);
@@ -510,11 +738,21 @@ app.get("/tasks/summary/by-assignee", async (req, res) => {
       homeId,
       OR: [{ dueDate: { gte: rangeStart, lte: rangeEnd } }, { doneAt: { gte: todayStart, lte: todayEnd } }, { dueDate: null }]
     },
-    select: { assigneeId: true, status: true, dueDate: true, doneAt: true, title: true, id: true }
+    select: {
+      assigneeId: true,
+      assignees: { select: { userId: true } },
+      status: true,
+      dueDate: true,
+      doneAt: true,
+      title: true,
+      id: true
+    }
   });
 
   const rows = home.members.map((member) => {
-    const mine = tasks.filter((task) => task.assigneeId === member.userId);
+    const mine = tasks.filter(
+      (task) => task.assigneeId === member.userId || task.assignees.some((assignee) => assignee.userId === member.userId)
+    );
     const open = mine.filter((task) => task.status === TaskStatus.OPEN).length;
     const overdue = mine.filter(
       (task) => task.status === TaskStatus.OPEN && task.dueDate && task.dueDate.getTime() < todayStart.getTime()
@@ -548,9 +786,12 @@ app.patch("/tasks/:id", async (req, res) => {
       title: z.string().trim().min(1).optional(),
       status: z.nativeEnum(TaskStatus).optional(),
       assigneeId: z.string().min(1).nullable().optional(),
+      assigneeIds: z.array(z.string().min(1)).optional(),
       dueDate: z.string().datetime().nullable().optional()
+      ,
+      eventId: z.string().min(1).nullable().optional()
     })
-    .refine((data) => data.status !== undefined || data.assigneeId !== undefined || data.dueDate !== undefined || data.title !== undefined, {
+    .refine((data) => data.status !== undefined || data.assigneeId !== undefined || data.assigneeIds !== undefined || data.dueDate !== undefined || data.title !== undefined || data.eventId !== undefined, {
       message: "Nothing to update"
     });
   const parsed = schema.safeParse(req.body);
@@ -565,12 +806,25 @@ app.patch("/tasks/:id", async (req, res) => {
     return res.status(404).json({ error: "Task not found" });
   }
 
-  if (parsed.data.assigneeId) {
-    const assigneeMembership = await prisma.homeMember.findUnique({
-      where: { homeId_userId: { homeId, userId: parsed.data.assigneeId } }
-    });
-    if (!assigneeMembership) {
+  const homeMembers = await prisma.homeMember.findMany({ where: { homeId }, select: { userId: true } });
+  const memberIds = new Set(homeMembers.map((m) => m.userId));
+  const assigneeIds = parsed.data.assigneeIds
+    ? [...new Set(parsed.data.assigneeIds)]
+    : parsed.data.assigneeId !== undefined
+      ? parsed.data.assigneeId
+        ? [parsed.data.assigneeId]
+        : []
+      : undefined;
+  if (assigneeIds) {
+    const invalidAssignee = assigneeIds.find((id) => !memberIds.has(id));
+    if (invalidAssignee) {
       return res.status(400).json({ error: "Assignee is not a member of this home" });
+    }
+  }
+  if (parsed.data.eventId !== undefined && parsed.data.eventId !== null) {
+    const event = await prisma.event.findFirst({ where: { id: parsed.data.eventId, homeId } });
+    if (!event) {
+      return res.status(400).json({ error: "Event not found in this home" });
     }
   }
 
@@ -578,11 +832,14 @@ app.patch("/tasks/:id", async (req, res) => {
   if (parsed.data.title !== undefined) {
     updateData.title = parsed.data.title;
   }
-  if (parsed.data.assigneeId !== undefined) {
-    updateData.assigneeId = parsed.data.assigneeId;
+  if (assigneeIds !== undefined) {
+    updateData.assigneeId = assigneeIds[0] ?? null;
   }
   if (parsed.data.dueDate !== undefined) {
     updateData.dueDate = parsed.data.dueDate ? new Date(parsed.data.dueDate) : null;
+  }
+  if (parsed.data.eventId !== undefined) {
+    updateData.eventId = parsed.data.eventId;
   }
 
   const isMarkingDone = parsed.data.status === TaskStatus.DONE && task.status !== TaskStatus.DONE;
@@ -597,9 +854,26 @@ app.patch("/tasks/:id", async (req, res) => {
     }
   }
 
-  const updated = await prisma.task.update({
+  await prisma.task.update({
     where: { id: task.id },
     data: updateData
+  });
+  if (assigneeIds !== undefined) {
+    await prisma.taskAssignee.deleteMany({ where: { taskId: task.id } });
+    if (assigneeIds.length > 0) {
+      await prisma.taskAssignee.createMany({
+        data: assigneeIds.map((userId) => ({ taskId: task.id, userId })),
+        skipDuplicates: true
+      });
+    }
+  }
+  const updated = await prisma.task.findUnique({
+    where: { id: task.id },
+    include: {
+      assignee: { select: { id: true, firstName: true, username: true } },
+      assignees: { include: { user: { select: { id: true, firstName: true, username: true } } } },
+      event: { select: { id: true, title: true, startAt: true, endAt: true } }
+    }
   });
 
   let awarded = false;
@@ -770,14 +1044,20 @@ app.get("/today", async (req, res) => {
   const end = localDateEnd(dateYmd, home.timezone);
   const userId = (req as HomeRequest).user.id;
 
-  const [tasks, routines, streak, userPoints] = await Promise.all([
+  const [tasks, routines, streak, userPoints, eventsToday] = await Promise.all([
     prisma.task.findMany({
       where: {
         homeId,
-        OR: [{ dueDate: null }, { dueDate: { gte: start, lte: end } }],
-        ...(scope === "mine" ? { assigneeId: userId } : {})
+        AND: [
+          { OR: [{ dueDate: null }, { dueDate: { gte: start, lte: end } }] },
+          ...(scope === "mine" ? [{ OR: [{ assigneeId: userId }, { assignees: { some: { userId } } }] }] : [])
+        ]
       },
-      include: { assignee: { select: { id: true, firstName: true, username: true } } },
+      include: {
+        assignee: { select: { id: true, firstName: true, username: true } },
+        assignees: { include: { user: { select: { id: true, firstName: true, username: true } } } },
+        event: { select: { id: true, title: true, startAt: true, endAt: true } }
+      },
       orderBy: { createdAt: "desc" }
     }),
     prisma.routineInstance.findMany({
@@ -796,6 +1076,17 @@ app.get("/today", async (req, res) => {
     prisma.scoreEvent.aggregate({
       where: { homeId, userId, createdAt: { gte: start, lte: end } },
       _sum: { points: true }
+    }),
+    prisma.event.findMany({
+      where: {
+        homeId,
+        AND: [{ startAt: { lte: end } }, { endAt: { gte: start } }]
+      },
+      include: {
+        participants: { include: { user: { select: { id: true, firstName: true, username: true } } } },
+        owner: { select: { id: true, firstName: true, username: true } }
+      },
+      orderBy: [{ startAt: "asc" }]
     })
   ]);
   const doneCount =
@@ -804,6 +1095,7 @@ app.get("/today", async (req, res) => {
   return res.json({
     date: dateYmd,
     tasks,
+    events: eventsToday,
     routineInstances: routines,
     streakClosed: Boolean(streak),
     pointsToday: userPoints._sum.points ?? 0,

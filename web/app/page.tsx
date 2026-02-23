@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ApiError, api, getErrorMessage } from "@/lib/api";
 import { clearToken, getToken, setToken } from "@/lib/session";
@@ -248,7 +249,7 @@ export default function TodayPage() {
           </Button>
         </Card>
         <Card className="space-y-3">
-          <Input value={joinCode} onChange={(e) => setJoinCode(e.target.value)} placeholder="Invite code" />
+          <Input value={joinCode} onChange={(e) => setJoinCode(e.target.value)} placeholder="Инвайт-код" />
           <Button
             variant="outline"
             onClick={async () => {
@@ -294,6 +295,10 @@ export default function TodayPage() {
   const done = today?.doneCount ?? 0;
   const total = today?.totalCount ?? 0;
   const progress = total > 0 ? Math.round((done / total) * 100) : 0;
+  const todayLabel = `Сегодня, ${new Intl.DateTimeFormat("ru-RU", {
+    day: "numeric",
+    month: "short"
+  }).format(new Date())}`;
 
   return (
     <div className="page-shell">
@@ -302,32 +307,23 @@ export default function TodayPage() {
       <Card className="space-y-3">
         <div className="page-header">
           <div>
-            <h1 className="page-title">Сегодня</h1>
-            <p className="page-subtitle">
-              {home.name} • {today?.date ?? "—"}
-            </p>
+            <h1 className="page-title">{todayLabel}</h1>
+            <p className="page-subtitle">{today?.date ?? "—"}</p>
           </div>
-          <div className="inline-flex rounded-lg border border-border bg-secondary p-1">
-            <Button size="sm" variant={scope === "mine" ? "default" : "ghost"} onClick={() => setScope("mine")}>
-              Мои
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => (window.location.href = "/home")}>
+              Дом: {home.name}
             </Button>
-            <Button size="sm" variant={scope === "all" ? "default" : "ghost"} onClick={() => setScope("all")}>
-              Все
-            </Button>
+            <div className="inline-flex rounded-lg border border-border bg-secondary p-1">
+              <Button size="sm" variant={scope === "mine" ? "default" : "ghost"} onClick={() => setScope("mine")}>
+                Мои
+              </Button>
+              <Button size="sm" variant={scope === "all" ? "default" : "ghost"} onClick={() => setScope("all")}>
+                Все
+              </Button>
+            </div>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-2 text-sm md:grid-cols-4">
-          <div className="rounded-lg border border-border bg-muted p-3">Прогресс: {done}/{total}</div>
-          <div className="rounded-lg border border-border bg-muted p-3">Выполнено: {progress}%</div>
-          <div className="rounded-lg border border-border bg-muted p-3">Очки сегодня: {today?.pointsToday ?? 0}</div>
-          <div className="rounded-lg border border-border bg-muted p-3">Стрик: {today?.streakClosed ? "закрыт" : "открыт"}</div>
-        </div>
-        <Button
-          variant="outline"
-          onClick={() => setNotice("Экспорт в чат будет добавлен в следующем небольшом обновлении.")}
-        >
-          Поделиться в чате
-        </Button>
         <div className="grid grid-cols-2 gap-2">
           <Button variant={taskFilter === "overdue" ? "default" : "outline"} onClick={() => setTaskFilter("overdue")}>
             Просроченные
@@ -342,7 +338,7 @@ export default function TodayPage() {
             Без дедлайна
           </Button>
         </div>
-        <Button onClick={() => setEditorOpen(true)}>+ Быстро добавить задачу</Button>
+        <Button onClick={() => setEditorOpen(true)}>+ Новая задача</Button>
       </Card>
 
       {isLoading ? (
@@ -355,7 +351,7 @@ export default function TodayPage() {
       ) : (
         <>
           <Card className="space-y-2">
-            <h2 className="text-base font-semibold">Задачи ({taskFilter})</h2>
+            <h2 className="text-base font-semibold">Задачи на сегодня</h2>
             {tasks.length === 0 ? (
               <div className="space-y-3 rounded-lg border border-dashed border-border bg-muted/50 p-4">
                 <p className="text-sm text-muted-foreground">Нет задач — добавьте первую.</p>
@@ -374,15 +370,31 @@ export default function TodayPage() {
                     await api.doneTask(token, id);
                     await reload();
                   }}
-                  onReassign={async (id, assignee) => {
-                    await api.updateTask(token, id, { assigneeId: assignee });
-                    await reload();
-                  }}
                   onUpdate={async (id, payload) => {
                     await api.updateTask(token, id, payload);
                     await reload();
                   }}
                 />
+              ))
+            )}
+          </Card>
+
+          <Card className="space-y-2">
+            <h2 className="text-base font-semibold">События на сегодня</h2>
+            {(today?.events ?? []).length === 0 ? (
+              <p className="empty-state">Сегодня событий нет.</p>
+            ) : (
+              (today?.events ?? []).map((event: any) => (
+                <Link key={event.id} href={`/events/${event.id}`} className="flex items-center justify-between rounded-lg border border-border p-3 text-sm">
+                  <div>
+                    <p className="font-medium">{event.title}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(event.startAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })} -{" "}
+                      {new Date(event.endAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
+                    </p>
+                  </div>
+                  <Badge variant="outline">Событие</Badge>
+                </Link>
               ))
             )}
           </Card>
@@ -394,10 +406,6 @@ export default function TodayPage() {
             timezone={home?.timezone ?? "UTC"}
             onDone={async (id) => {
               await api.doneTask(token, id);
-              await reload();
-            }}
-            onReassign={async (id, assigneeId) => {
-              await api.updateTask(token, id, { assigneeId });
               await reload();
             }}
             onUpdate={async (id, payload) => {
@@ -440,6 +448,12 @@ export default function TodayPage() {
               ))
             )}
           </Card>
+          <Card className="space-y-2">
+            <p className="text-sm text-muted-foreground">
+              Прогресс: {done}/{total} • Выполнено: {progress}% • Очки: {today?.pointsToday ?? 0} • Стрик:{" "}
+              {today?.streakClosed ? "закрыт" : "открыт"}
+            </p>
+          </Card>
         </>
       )}
       <TaskEditorSheet
@@ -449,7 +463,7 @@ export default function TodayPage() {
         onSave={async (payload) => {
           await api.createTask(token, {
             title: payload.title,
-            assigneeId: payload.assigneeId ?? undefined,
+            assigneeIds: payload.assigneeIds ?? undefined,
             dueDate: payload.dueDate ?? undefined,
             points: 5
           });
