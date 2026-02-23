@@ -4,11 +4,13 @@ import { z } from "zod";
 import type { HomeRequest } from "../../../middleware.js";
 import { AiSuggestionService } from "../services/ai-suggestion.service.js";
 import { AiSummaryService } from "../services/ai-summary.service.js";
+import { AiAnalysisJobService } from "../services/ai-analysis.job.js";
 import { config } from "../../../config.js";
 
 const router = Router();
 const suggestionService = new AiSuggestionService();
 const summaryService = new AiSummaryService();
+const analysisJobService = new AiAnalysisJobService();
 
 const listQuerySchema = z.object({
   status: z.enum(["pending", "approved", "rejected", "ignored"]).optional(),
@@ -79,6 +81,26 @@ router.post("/suggestions/:id/reject", async (req, res) =>
 router.post("/suggestions/:id/ignore", async (req, res) =>
   setSuggestionStatus(req as HomeRequest, res, AiSuggestionStatus.IGNORED)
 );
+
+router.post("/suggestions/refresh", async (req, res) => {
+  if (!aiGuard(req as HomeRequest, res)) return;
+  const ctx = req as HomeRequest;
+  const result = await analysisJobService.runManualAnalysisForHome({
+    homeId: ctx.context.homeId,
+    userId: ctx.user.id
+  });
+
+  if (!result.ok) {
+    const statusCode =
+      result.status === "no_connections"
+        ? 409
+        : result.status === "disabled" || result.status === "misconfigured"
+          ? 400
+          : 500;
+    return res.status(statusCode).json(result);
+  }
+  return res.json(result);
+});
 
 router.get("/summary/today", async (req, res) => {
   if (!aiGuard(req as HomeRequest, res)) return;

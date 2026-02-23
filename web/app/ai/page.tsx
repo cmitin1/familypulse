@@ -32,6 +32,7 @@ export default function AiInboxPage() {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [summaryText, setSummaryText] = useState("");
   const [summaryStats, setSummaryStats] = useState<{ tasks: number; routines: number; events: number; aiSuggestions: number } | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   async function load(currentToken: string) {
     setLoading(true);
@@ -78,6 +79,28 @@ export default function AiInboxPage() {
     }
   }
 
+  async function refreshInbox() {
+    if (!token || refreshing) return;
+    setRefreshing(true);
+    setNotice("");
+    try {
+      const result = await api.refreshAiSuggestions(token);
+      await load(token);
+      if (result.status === "no_new_messages") {
+        setNotice("Новых сообщений для анализа не найдено.");
+      } else {
+        setNotice(
+          `AI анализ завершен: обработано чатов ${result.processedChats ?? 0}, сообщений ${result.messagesAnalyzed ?? 0}, кандидатов ${result.suggestionsCreated ?? 0}.`
+        );
+      }
+      setError("");
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   return (
     <div className="page-shell">
       {error ? <Alert variant="error">{error}</Alert> : null}
@@ -90,8 +113,8 @@ export default function AiInboxPage() {
             Сегодня: задачи {summaryStats.tasks}, рутины {summaryStats.routines}, события {summaryStats.events}, AI {summaryStats.aiSuggestions}
           </p>
         ) : null}
-        <Button size="sm" variant="outline" onClick={() => token && load(token)}>
-          Обновить
+        <Button size="sm" variant="outline" onClick={refreshInbox} disabled={!token || refreshing || loading}>
+          {refreshing ? "Анализируем чат..." : "Обновить"}
         </Button>
       </Card>
       <Card className="space-y-2">

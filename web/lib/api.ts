@@ -170,6 +170,8 @@ export const api = {
     request<any>(`/ai/suggestions/${id}/reject`, { method: "POST", token, body: {} }),
   ignoreAiSuggestion: (token: string, id: string) =>
     request<any>(`/ai/suggestions/${id}/ignore`, { method: "POST", token, body: {} }),
+  refreshAiSuggestions: (token: string) =>
+    request<any>("/ai/suggestions/refresh", { method: "POST", token, body: {} }),
   getAiTodaySummary: (token: string) => request<any>("/ai/summary/today", { token }),
   getAiDigestSummary: (token: string, hours = 24) => request<any>(withQuery("/ai/summary/digest", { hours }), { token })
 };

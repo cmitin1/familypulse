@@ -76,6 +76,8 @@ export class AiSuggestionService {
     });
 
     let created = 0;
+    let deduped = 0;
+    let skippedBySourceRefs = 0;
     for (const item of input.suggestions) {
       const dedupKey = makeDedupKey(input.sourceChatId, item);
       const exists = await prisma.aiSuggestion.findFirst({
@@ -87,6 +89,7 @@ export class AiSuggestionService {
         select: { id: true }
       });
       if (exists) {
+        deduped += 1;
         continue;
       }
 
@@ -113,6 +116,7 @@ export class AiSuggestionService {
           ? item.sourceMessageIds.filter((id) => allowedMessageIds.size === 0 || allowedMessageIds.has(id))
           : [];
       if (allowedMessageIds.size > 0 && sourceMessageIds.length === 0) {
+        skippedBySourceRefs += 1;
         continue;
       }
 
@@ -140,7 +144,7 @@ export class AiSuggestionService {
       });
       created += 1;
     }
-    return { created };
+    return { created, deduped, skippedBySourceRefs };
   }
 
   async list(homeId: string, filter: {

@@ -15,7 +15,22 @@ type CandidateConnection = {
   lastAnalyzedMessageId: number | null;
 };
 
+type ConnectionRunOutcome =
+  | {
+      status: "completed";
+      messagesAnalyzed: number;
+      suggestionsCreated: number;
+      suggestionsDeduped: number;
+      suggestionsSkippedBySourceRefs: number;
+    }
+  | { status: "no_new_messages"; messagesAnalyzed: 0; suggestionsCreated: 0; suggestionsDeduped: 0; suggestionsSkippedBySourceRefs: 0 }
+  | { status: "disabled_or_unlinked"; messagesAnalyzed: 0; suggestionsCreated: 0; suggestionsDeduped: 0; suggestionsSkippedBySourceRefs: 0 }
+  | { status: "in_progress"; messagesAnalyzed: 0; suggestionsCreated: 0; suggestionsDeduped: 0; suggestionsSkippedBySourceRefs: 0 }
+  | { status: "failed"; messagesAnalyzed: 0; suggestionsCreated: 0; suggestionsDeduped: 0; suggestionsSkippedBySourceRefs: 0; error: string };
+
 export class AiAnalysisJobService {
+  private static readonly inProgressConnections = new Set<string>();
+
   constructor(
     private readonly chatIntelligenceService = new ChatIntelligenceService(),
     private readonly aiSuggestionService = new AiSuggestionService()
@@ -50,6 +65,117 @@ export class AiAnalysisJobService {
     }
   }
 
+  async runManualAnalysisForHome(input: { homeId: string; userId: string }) {
+    if (!config.aiFeatureEnabled) {
+      return {
+        ok: false as const,
+        status: "disabled" as const,
+        homeId: input.homeId,
+        message: "AI feature is disabled"
+      };
+    }
+    if (!config.aiChatAnalysisEnabled) {
+      return {
+        ok: false as const,
+        status: "disabled" as const,
+        homeId: input.homeId,
+        message: "AI chat analysis is disabled"
+      };
+    }
+    if (!this.chatIntelligenceService.isConfigured()) {
+      return {
+        ok: false as const,
+        status: "misconfigured" as const,
+        homeId: input.homeId,
+        message: "OPENROUTER_API_KEY is not configured"
+      };
+    }
+
+    const connections = await prisma.aiChatConnection.findMany({
+      where: { homeId: input.homeId, isEnabled: true }
+    });
+    if (!connections.length) {
+      return {
+        ok: false as const,
+        status: "no_connections" as const,
+        homeId: input.homeId,
+        message: "No enabled AI chat connections for this home"
+      };
+    }
+
+    console.info("[AI] Manual refresh started", {
+      homeId: input.homeId,
+      userId: input.userId,
+      chatConnections: connections.length
+    });
+
+    let processedChats = 0;
+    let messagesAnalyzed = 0;
+    let suggestionsCreated = 0;
+    let suggestionsDeduped = 0;
+    let skippedBySourceRefs = 0;
+    let noNewMessages = 0;
+    let inProgress = 0;
+    let failed = 0;
+    const errors: string[] = [];
+
+    for (const connection of connections) {
+      const outcome = await this.processConnection(connection, true);
+      if (outcome.status === "disabled_or_unlinked") {
+        continue;
+      }
+      if (outcome.status === "in_progress") {
+        inProgress += 1;
+        continue;
+      }
+      if (outcome.status === "failed") {
+        failed += 1;
+        errors.push(`[${connection.telegramChatId}] ${outcome.error}`);
+        continue;
+      }
+      processedChats += 1;
+      if (outcome.status === "no_new_messages") {
+        noNewMessages += 1;
+        continue;
+      }
+      messagesAnalyzed += outcome.messagesAnalyzed;
+      suggestionsCreated += outcome.suggestionsCreated;
+      suggestionsDeduped += outcome.suggestionsDeduped;
+      skippedBySourceRefs += outcome.suggestionsSkippedBySourceRefs;
+    }
+
+    const status =
+      failed > 0 && processedChats === 0
+        ? "failed"
+        : messagesAnalyzed === 0 && suggestionsCreated === 0 && noNewMessages > 0
+          ? "no_new_messages"
+          : "completed";
+
+    const response = {
+      ok: status !== "failed",
+      status,
+      homeId: input.homeId,
+      processedChats,
+      messagesAnalyzed,
+      suggestionsCreated,
+      suggestionsDeduped,
+      skippedBySourceRefs,
+      noNewMessagesChats: noNewMessages,
+      inProgressChats: inProgress,
+      failedChats: failed,
+      errors,
+      message:
+        status === "no_new_messages"
+          ? "No new messages for analysis"
+          : status === "completed"
+            ? "AI analysis completed"
+            : "AI analysis finished with errors"
+    } as const;
+
+    console.info("[AI] Manual refresh finished", response);
+    return response;
+  }
+
   private shouldRunNow(connection: CandidateConnection): boolean {
     if (!connection.lastAnalyzedAt) {
       return true;
@@ -58,7 +184,19 @@ export class AiAnalysisJobService {
     return Date.now() >= nextAt;
   }
 
-  private async processConnection(connection: CandidateConnection) {
+  private async processConnection(connection: CandidateConnection, force = false): Promise<ConnectionRunOutcome> {
+    const runKey = `${connection.homeId}:${connection.telegramChatId}`;
+    if (AiAnalysisJobService.inProgressConnections.has(runKey)) {
+      return {
+        status: "in_progress",
+        messagesAnalyzed: 0,
+        suggestionsCreated: 0,
+        suggestionsDeduped: 0,
+        suggestionsSkippedBySourceRefs: 0
+      };
+    }
+    AiAnalysisJobService.inProgressConnections.add(runKey);
+    try {
     const link = await prisma.chatLink.findUnique({
       where: {
         homeId_telegramChatId: {
@@ -68,7 +206,22 @@ export class AiAnalysisJobService {
       }
     });
     if (!link?.enabled) {
-      return;
+      return {
+        status: "disabled_or_unlinked",
+        messagesAnalyzed: 0,
+        suggestionsCreated: 0,
+        suggestionsDeduped: 0,
+        suggestionsSkippedBySourceRefs: 0
+      };
+    }
+    if (!force && !this.shouldRunNow(connection)) {
+      return {
+        status: "disabled_or_unlinked",
+        messagesAnalyzed: 0,
+        suggestionsCreated: 0,
+        suggestionsDeduped: 0,
+        suggestionsSkippedBySourceRefs: 0
+      };
     }
 
     const where = connection.lastAnalyzedMessageId
@@ -97,7 +250,13 @@ export class AiAnalysisJobService {
         where: { id: connection.id },
         data: { lastAnalyzedAt: new Date() }
       });
-      return;
+      return {
+        status: "no_new_messages",
+        messagesAnalyzed: 0,
+        suggestionsCreated: 0,
+        suggestionsDeduped: 0,
+        suggestionsSkippedBySourceRefs: 0
+      };
     }
 
     const periodStart = messages[0].sentAt;
@@ -171,6 +330,13 @@ export class AiAnalysisJobService {
         homeId: connection.homeId,
         suggestions: created.created
       });
+      return {
+        status: "completed",
+        messagesAnalyzed: messages.length,
+        suggestionsCreated: created.created,
+        suggestionsDeduped: created.deduped,
+        suggestionsSkippedBySourceRefs: created.skippedBySourceRefs
+      };
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown extraction error";
       const errorType =
@@ -189,6 +355,17 @@ export class AiAnalysisJobService {
         errorType,
         error: message
       });
+      return {
+        status: "failed",
+        messagesAnalyzed: 0,
+        suggestionsCreated: 0,
+        suggestionsDeduped: 0,
+        suggestionsSkippedBySourceRefs: 0,
+        error: message
+      };
+    }
+    } finally {
+      AiAnalysisJobService.inProgressConnections.delete(runKey);
     }
   }
 }
