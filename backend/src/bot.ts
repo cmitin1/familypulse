@@ -37,6 +37,39 @@ async function registerTelegramCommands(bot: Telegraf) {
   }
 }
 
+async function safeReply(ctx: any, text: string, extra?: any) {
+  try {
+    await ctx.reply(text, extra);
+  } catch (error) {
+    console.error("[BOT] Failed to send reply", {
+      chatId: ctx.chat?.id,
+      chatType: ctx.chat?.type,
+      error: error instanceof Error ? error.message : error
+    });
+  }
+}
+
+async function replyMiniAppAware(ctx: any, text: string) {
+  const isPrivate = ctx.chat?.type === "private";
+  if (isPrivate) {
+    await safeReply(ctx, text, {
+      reply_markup: {
+        inline_keyboard: [[{ text: "📋 Открыть FamilyPulse", web_app: { url: config.miniAppUrl } }]]
+      }
+    });
+    return;
+  }
+
+  // In group chats Telegram may reject web_app buttons with BUTTON_TYPE_INVALID.
+  // Send a safe fallback that doesn't use web_app.
+  const fallback = [
+    text,
+    "",
+    "Откройте бота в личном чате и используйте /app, чтобы запустить Mini App."
+  ].join("\n");
+  await safeReply(ctx, fallback);
+}
+
 function miniAppDirectUrl(payload: string) {
   if (!config.telegramBotUsername) {
     throw new Error("TELEGRAM_BOT_USERNAME is required to generate mini-app links");
@@ -78,6 +111,15 @@ async function ensureChatAccess(homeId: string, chatId: string, chatType: string
 }
 
 function setupBot(bot: Telegraf) {
+  bot.catch((error, ctx) => {
+    console.error("[BOT] Update handling error", {
+      chatId: ctx.chat?.id,
+      chatType: ctx.chat?.type,
+      updateType: ctx.updateType,
+      error: error instanceof Error ? error.message : error
+    });
+  });
+
   bot.use(async (ctx, next) => {
     try {
       if ("message" in ctx.update) {
@@ -90,19 +132,11 @@ function setupBot(bot: Telegraf) {
   });
 
   bot.start(async (ctx) => {
-    await ctx.reply("FamilyPulse готов. Откройте Mini App:", {
-      reply_markup: {
-        inline_keyboard: [[{ text: "📋 Открыть FamilyPulse", web_app: { url: config.miniAppUrl } }]]
-      }
-    });
+    await replyMiniAppAware(ctx, "FamilyPulse готов. Откройте Mini App:");
   });
 
   bot.command("app", async (ctx) => {
-    await ctx.reply("Открыть FamilyPulse:", {
-      reply_markup: {
-        inline_keyboard: [[{ text: "📋 Открыть FamilyPulse", web_app: { url: config.miniAppUrl } }]]
-      }
-    });
+    await replyMiniAppAware(ctx, "Открыть FamilyPulse:");
   });
 
   bot.command("help", async (ctx) => {
