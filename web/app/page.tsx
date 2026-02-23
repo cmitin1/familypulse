@@ -9,6 +9,10 @@ import { Input } from "@/components/ui/input";
 import { BottomNav } from "@/components/nav";
 import { Alert } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
+import { TaskCard } from "@/components/tasks/task-card";
+import { TaskEditorSheet } from "@/components/tasks/task-editor-sheet";
+import { TasksSummaryTable } from "@/components/tasks/tasks-summary-table";
+import { Badge } from "@/components/ui/badge";
 
 declare global {
   interface Window {
@@ -27,6 +31,19 @@ export default function TodayPage() {
   const [joinCode, setJoinCode] = useState("");
   const [homeName, setHomeName] = useState("Наш дом");
   const [notice, setNotice] = useState("");
+  const [tasks, setTasks] = useState<any[]>([]);
+  const [summary, setSummary] = useState<any[]>([]);
+  const [taskFilter, setTaskFilter] = useState<"overdue" | "today" | "week" | "noDueDate">("today");
+  const [editorOpen, setEditorOpen] = useState(false);
+
+  function addDays(date: Date, days: number) {
+    return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
+  }
+
+  function ymd(date: Date) {
+    const pad = (v: number) => String(v).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  }
 
   async function waitForInitData(maxAttempts = 12, delayMs = 250): Promise<string> {
     for (let i = 0; i < maxAttempts; i += 1) {
@@ -109,10 +126,30 @@ export default function TodayPage() {
   useEffect(() => {
     if (!token) return;
     setIsLoading(true);
-    withReAuth((actualToken) => Promise.all([api.getCurrentHome(actualToken), api.getToday(actualToken, scope)]))
-      .then(([h, t]) => {
+    const now = new Date();
+    const from = ymd(now);
+    const to = ymd(addDays(now, 7));
+    const tasksQuery =
+      taskFilter === "overdue"
+        ? { scope, status: "open" as const, overdue: true }
+        : taskFilter === "today"
+          ? { scope, from, to: from }
+          : taskFilter === "week"
+            ? { scope, from, to }
+            : { scope, noDueDate: true };
+    withReAuth((actualToken) =>
+      Promise.all([
+        api.getCurrentHome(actualToken),
+        api.getToday(actualToken, scope),
+        api.getTasks(actualToken, tasksQuery),
+        api.getTasksSummaryByAssignee(actualToken, from, to)
+      ])
+    )
+      .then(([h, t, taskRows, summaryRows]) => {
         setHome(h);
         setToday(t);
+        setTasks(taskRows);
+        setSummary(summaryRows);
         setStatus("OK");
         setError("");
       })
@@ -121,17 +158,35 @@ export default function TodayPage() {
         setError(getErrorMessage(err));
       })
       .finally(() => setIsLoading(false));
-  }, [token, scope]);
+  }, [token, scope, taskFilter]);
 
   async function reload() {
     if (!token) return;
     setIsLoading(true);
     try {
-      const [h, t] = await withReAuth((actualToken) =>
-        Promise.all([api.getCurrentHome(actualToken), api.getToday(actualToken, scope)])
+      const now = new Date();
+      const from = ymd(now);
+      const to = ymd(addDays(now, 7));
+      const tasksQuery =
+        taskFilter === "overdue"
+          ? { scope, status: "open" as const, overdue: true }
+          : taskFilter === "today"
+            ? { scope, from, to: from }
+            : taskFilter === "week"
+              ? { scope, from, to }
+              : { scope, noDueDate: true };
+      const [h, t, taskRows, summaryRows] = await withReAuth((actualToken) =>
+        Promise.all([
+          api.getCurrentHome(actualToken),
+          api.getToday(actualToken, scope),
+          api.getTasks(actualToken, tasksQuery),
+          api.getTasksSummaryByAssignee(actualToken, from, to)
+        ])
       );
       setHome(h);
       setToday(t);
+      setTasks(taskRows);
+      setSummary(summaryRows);
       setError("");
     } catch (err) {
       setError(getErrorMessage(err));
@@ -222,10 +277,25 @@ export default function TodayPage() {
         </div>
         <Button
           variant="outline"
-          onClick={() => setNotice("TODO: endpoint для отправки дайджеста из Mini App пока не реализован")}
+          onClick={() => setNotice("Экспорт в чат будет добавлен в следующем небольшом обновлении.")}
         >
           Share Today to chat
         </Button>
+        <div className="grid grid-cols-2 gap-2">
+          <Button variant={taskFilter === "overdue" ? "default" : "outline"} onClick={() => setTaskFilter("overdue")}>
+            Просроченные
+          </Button>
+          <Button variant={taskFilter === "today" ? "default" : "outline"} onClick={() => setTaskFilter("today")}>
+            Сегодня
+          </Button>
+          <Button variant={taskFilter === "week" ? "default" : "outline"} onClick={() => setTaskFilter("week")}>
+            7 дней
+          </Button>
+          <Button variant={taskFilter === "noDueDate" ? "default" : "outline"} onClick={() => setTaskFilter("noDueDate")}>
+            Без дедлайна
+          </Button>
+        </div>
+        <Button onClick={() => setEditorOpen(true)}>+ Быстро добавить задачу</Button>
       </Card>
 
       {isLoading ? (
@@ -238,39 +308,51 @@ export default function TodayPage() {
       ) : (
         <>
           <Card className="space-y-2">
-            <h2 className="font-medium">Tasks</h2>
-            {(today?.tasks ?? []).length === 0 ? (
+            <h2 className="font-medium">Задачи ({taskFilter})</h2>
+            {tasks.length === 0 ? (
               <p className="rounded-md border border-dashed p-3 text-sm text-slate-500">Нет задач — добавьте первую</p>
             ) : (
-              (today?.tasks ?? []).map((task: any) => (
-                <div key={task.id} className="flex items-center justify-between rounded-md border bg-white p-3 text-sm">
-                  <div>
-                    <p className="font-medium">{task.title}</p>
-                    <p className="text-xs text-slate-500">
-                      {task.assignee?.firstName || task.assignee?.username || "Без исполнителя"}
-                    </p>
-                  </div>
-                  {task.status === "DONE" ? (
-                    <span className="rounded bg-emerald-100 px-2 py-1 text-emerald-700">done</span>
-                  ) : (
-                    <Button
-                      size="sm"
-                      onClick={async () => {
-                        try {
-                          await api.doneTask(token, task.id);
-                          await reload();
-                        } catch (err) {
-                          setError(getErrorMessage(err));
-                        }
-                      }}
-                    >
-                      done
-                    </Button>
-                  )}
-                </div>
+              tasks.map((task: any) => (
+                <TaskCard
+                  key={task.id}
+                  task={task}
+                  members={home?.members ?? []}
+                  timezone={home?.timezone ?? "UTC"}
+                  onDone={async (id) => {
+                    await api.doneTask(token, id);
+                    await reload();
+                  }}
+                  onReassign={async (id, assignee) => {
+                    await api.updateTask(token, id, { assigneeId: assignee });
+                    await reload();
+                  }}
+                  onUpdate={async (id, payload) => {
+                    await api.updateTask(token, id, payload);
+                    await reload();
+                  }}
+                />
               ))
             )}
           </Card>
+
+          <TasksSummaryTable
+            rows={summary}
+            tasks={tasks}
+            members={home?.members ?? []}
+            timezone={home?.timezone ?? "UTC"}
+            onDone={async (id) => {
+              await api.doneTask(token, id);
+              await reload();
+            }}
+            onReassign={async (id, assigneeId) => {
+              await api.updateTask(token, id, { assigneeId });
+              await reload();
+            }}
+            onUpdate={async (id, payload) => {
+              await api.updateTask(token, id, payload);
+              await reload();
+            }}
+          />
 
           <Card className="space-y-2 border-sky-200 bg-sky-50/50">
             <h2 className="font-medium text-sky-900">Routines</h2>
@@ -288,7 +370,7 @@ export default function TodayPage() {
                     </p>
                   </div>
                   {item.isDone ? (
-                    <span className="rounded bg-emerald-100 px-2 py-1 text-emerald-700">done</span>
+                    <Badge variant="success">done</Badge>
                   ) : (
                     <Button
                       size="sm"
@@ -310,6 +392,20 @@ export default function TodayPage() {
           </Card>
         </>
       )}
+      <TaskEditorSheet
+        open={editorOpen}
+        onOpenChange={setEditorOpen}
+        members={home?.members ?? []}
+        onSave={async (payload) => {
+          await api.createTask(token, {
+            title: payload.title,
+            assigneeId: payload.assigneeId ?? undefined,
+            dueDate: payload.dueDate ?? undefined,
+            points: 5
+          });
+          await reload();
+        }}
+      />
       <BottomNav />
     </div>
   );

@@ -2,7 +2,9 @@ import express from "express";
 import cors from "cors";
 import { z } from "zod";
 import { SourceType, TaskStatus } from "@prisma/client";
+import { formatInTimeZone } from "date-fns-tz";
 import { validateTelegramInitData, signJwt } from "./auth.js";
+import { syncCalendarFeed } from "./calendar.js";
 import { config } from "./config.js";
 import { prisma } from "./db.js";
 import { AuthedRequest, HomeRequest, requireAuth, requireHome } from "./middleware.js";
@@ -25,6 +27,13 @@ function zodBadRequest(res: express.Response, parsed: { error: z.ZodError }) {
     error: "Validation failed",
     details: parsed.error.flatten()
   });
+}
+
+function toBool(value: unknown): boolean | undefined {
+  if (value === undefined) return undefined;
+  if (value === "true" || value === true) return true;
+  if (value === "false" || value === false) return false;
+  return undefined;
 }
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
@@ -209,6 +218,145 @@ app.post("/invites/join", async (req, res) => {
 
 app.use(requireHome);
 
+function normalizeIcsUrl(input: string): string {
+  const raw = input.trim();
+  if (raw.startsWith("webcal://")) {
+    return "https://" + raw.slice("webcal://".length);
+  }
+  return raw;
+}
+
+app.get("/calendar/feeds", async (req, res) => {
+  const { homeId } = (req as HomeRequest).context;
+  const feeds = await prisma.calendarFeed.findMany({
+    where: { homeId },
+    orderBy: { createdAt: "desc" }
+  });
+  return res.json(feeds);
+});
+
+app.post("/calendar/feeds", async (req, res) => {
+  const schema = z.object({
+    title: z.string().trim().min(1),
+    icsUrl: z.string().trim().min(8)
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    return zodBadRequest(res, parsed);
+  }
+  const { homeId } = (req as HomeRequest).context;
+  const icsUrl = normalizeIcsUrl(parsed.data.icsUrl);
+  const feed = await prisma.calendarFeed.create({
+    data: {
+      homeId,
+      title: parsed.data.title,
+      icsUrl
+    }
+  });
+  return res.status(201).json(feed);
+});
+
+app.patch("/calendar/feeds/:id", async (req, res) => {
+  const schema = z
+    .object({
+      title: z.string().trim().min(1).optional(),
+      icsUrl: z.string().trim().min(8).optional(),
+      isEnabled: z.boolean().optional()
+    })
+    .refine((payload) => payload.title !== undefined || payload.icsUrl !== undefined || payload.isEnabled !== undefined, {
+      message: "Nothing to update"
+    });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    return zodBadRequest(res, parsed);
+  }
+  const { homeId } = (req as HomeRequest).context;
+  const feed = await prisma.calendarFeed.findFirst({
+    where: { id: req.params.id, homeId }
+  });
+  if (!feed) {
+    return res.status(404).json({ error: "Feed not found" });
+  }
+  const updated = await prisma.calendarFeed.update({
+    where: { id: feed.id },
+    data: {
+      ...(parsed.data.title !== undefined ? { title: parsed.data.title } : {}),
+      ...(parsed.data.icsUrl !== undefined ? { icsUrl: normalizeIcsUrl(parsed.data.icsUrl) } : {}),
+      ...(parsed.data.isEnabled !== undefined ? { isEnabled: parsed.data.isEnabled } : {})
+    }
+  });
+  return res.json(updated);
+});
+
+app.delete("/calendar/feeds/:id", async (req, res) => {
+  const { homeId } = (req as HomeRequest).context;
+  const feed = await prisma.calendarFeed.findFirst({
+    where: { id: req.params.id, homeId }
+  });
+  if (!feed) {
+    return res.status(404).json({ error: "Feed not found" });
+  }
+  await prisma.calendarFeed.delete({ where: { id: feed.id } });
+  return res.json({ ok: true });
+});
+
+app.post("/calendar/feeds/:id/sync", async (req, res) => {
+  const { homeId } = (req as HomeRequest).context;
+  const feed = await prisma.calendarFeed.findFirst({
+    where: { id: req.params.id, homeId }
+  });
+  if (!feed) {
+    return res.status(404).json({ error: "Feed not found" });
+  }
+  const result = await syncCalendarFeed(feed.id);
+  return res.json(result);
+});
+
+app.get("/calendar/events", async (req, res) => {
+  const schema = z.object({
+    from: ymdSchema,
+    to: ymdSchema,
+    includeTasks: z.enum(["true", "false"]).optional()
+  });
+  const parsed = schema.safeParse({
+    from: req.query.from,
+    to: req.query.to,
+    includeTasks: req.query.includeTasks
+  });
+  if (!parsed.success) {
+    return zodBadRequest(res, parsed);
+  }
+  const { homeId } = (req as HomeRequest).context;
+  const home = await prisma.home.findUnique({ where: { id: homeId } });
+  if (!home) {
+    return res.status(404).json({ error: "Home not found" });
+  }
+  const start = localDateStart(parsed.data.from, home.timezone);
+  const end = localDateEnd(parsed.data.to, home.timezone);
+  const events = await prisma.calendarEvent.findMany({
+    where: {
+      homeId,
+      AND: [{ startAt: { lte: end } }, { endAt: { gte: start } }]
+    },
+    include: { feed: { select: { id: true, title: true, isEnabled: true } } },
+    orderBy: [{ startAt: "asc" }]
+  });
+
+  let tasksDue: any[] = [];
+  if (parsed.data.includeTasks === "true") {
+    tasksDue = await prisma.task.findMany({
+      where: {
+        homeId,
+        dueDate: { gte: start, lte: end }
+      },
+      include: { assignee: { select: { id: true, firstName: true, username: true } } },
+      orderBy: { dueDate: "asc" }
+    });
+  }
+
+  return res.json({ events, tasksDue });
+});
+
 app.post("/tasks", async (req, res) => {
   const schema = z.object({
     title: z.string().trim().min(1, "Title is required"),
@@ -255,10 +403,24 @@ app.get("/tasks", async (req, res) => {
   }
   const scope = scopeParsed.data;
   const dateRaw = String(req.query.date ?? "");
+  const fromRaw = String(req.query.from ?? "");
+  const toRaw = String(req.query.to ?? "");
+  const statusRaw = String(req.query.status ?? "all").toLowerCase();
+  const overdueRaw = toBool(req.query.overdue);
+  const noDueDateRaw = toBool(req.query.noDueDate);
+  const assigneeIdRaw = typeof req.query.assigneeId === "string" ? req.query.assigneeId : "";
   const userId = (req as HomeRequest).user.id;
 
   const where: any = { homeId };
   if (scope === "mine") where.assigneeId = userId;
+  if (assigneeIdRaw) where.assigneeId = assigneeIdRaw;
+  if (statusRaw === "open") where.status = TaskStatus.OPEN;
+  if (statusRaw === "done") where.status = TaskStatus.DONE;
+
+  if (!["all", "open", "done"].includes(statusRaw)) {
+    return res.status(400).json({ error: "status must be one of: all|open|done" });
+  }
+
   if (dateRaw) {
     const dateParsed = ymdSchema.safeParse(dateRaw);
     if (!dateParsed.success) {
@@ -267,7 +429,34 @@ app.get("/tasks", async (req, res) => {
     const start = localDateStart(dateParsed.data, home.timezone);
     const end = localDateEnd(dateParsed.data, home.timezone);
     where.dueDate = { gte: start, lte: end };
+  } else if (fromRaw || toRaw) {
+    const from = fromRaw ? ymdSchema.safeParse(fromRaw) : null;
+    const to = toRaw ? ymdSchema.safeParse(toRaw) : null;
+    if (from && !from.success) {
+      return zodBadRequest(res, from);
+    }
+    if (to && !to.success) {
+      return zodBadRequest(res, to);
+    }
+    where.dueDate = {
+      ...(from ? { gte: localDateStart(from.data, home.timezone) } : {}),
+      ...(to ? { lte: localDateEnd(to.data, home.timezone) } : {})
+    };
   }
+
+  const todayYmd = formatInTimeZone(new Date(), home.timezone, "yyyy-MM-dd");
+  const todayStart = localDateStart(todayYmd, home.timezone);
+  if (overdueRaw === true) {
+    where.status = TaskStatus.OPEN;
+    where.dueDate = {
+      ...(where.dueDate ?? {}),
+      lt: todayStart
+    };
+  }
+  if (noDueDateRaw === true) {
+    where.dueDate = null;
+  }
+
   const tasks = await prisma.task.findMany({
     where,
     include: { assignee: { select: { id: true, firstName: true, username: true } } },
@@ -276,14 +465,82 @@ app.get("/tasks", async (req, res) => {
   return res.json(tasks);
 });
 
+app.get("/tasks/summary/by-assignee", async (req, res) => {
+  const { homeId } = (req as HomeRequest).context;
+  const home = await prisma.home.findUnique({
+    where: { id: homeId },
+    include: { members: { include: { user: true } } }
+  });
+  if (!home) {
+    return res.status(404).json({ error: "Home not found" });
+  }
+
+  const fromRaw = typeof req.query.from === "string" ? req.query.from : "";
+  const toRaw = typeof req.query.to === "string" ? req.query.to : "";
+  const now = new Date();
+  const todayYmd = formatInTimeZone(now, home.timezone, "yyyy-MM-dd");
+  const defaultFromYmd = todayYmd;
+  const defaultToYmd = formatInTimeZone(new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000), home.timezone, "yyyy-MM-dd");
+  const fromYmd = fromRaw || defaultFromYmd;
+  const toYmd = toRaw || defaultToYmd;
+  const fromParsed = ymdSchema.safeParse(fromYmd);
+  const toParsed = ymdSchema.safeParse(toYmd);
+  if (!fromParsed.success) return zodBadRequest(res, fromParsed);
+  if (!toParsed.success) return zodBadRequest(res, toParsed);
+
+  const [rangeStart, rangeEnd, todayStart, todayEnd] = [
+    localDateStart(fromParsed.data, home.timezone),
+    localDateEnd(toParsed.data, home.timezone),
+    localDateStart(todayYmd, home.timezone),
+    localDateEnd(todayYmd, home.timezone)
+  ];
+
+  const tasks = await prisma.task.findMany({
+    where: {
+      homeId,
+      OR: [{ dueDate: { gte: rangeStart, lte: rangeEnd } }, { doneAt: { gte: todayStart, lte: todayEnd } }, { dueDate: null }]
+    },
+    select: { assigneeId: true, status: true, dueDate: true, doneAt: true, title: true, id: true }
+  });
+
+  const rows = home.members.map((member) => {
+    const mine = tasks.filter((task) => task.assigneeId === member.userId);
+    const open = mine.filter((task) => task.status === TaskStatus.OPEN).length;
+    const overdue = mine.filter(
+      (task) => task.status === TaskStatus.OPEN && task.dueDate && task.dueDate.getTime() < todayStart.getTime()
+    ).length;
+    const dueSoon = mine.filter(
+      (task) =>
+        task.status === TaskStatus.OPEN &&
+        task.dueDate &&
+        task.dueDate.getTime() >= todayStart.getTime() &&
+        task.dueDate.getTime() <= rangeEnd.getTime()
+    ).length;
+    const doneToday = mine.filter(
+      (task) => task.status === TaskStatus.DONE && task.doneAt && task.doneAt.getTime() >= todayStart.getTime() && task.doneAt.getTime() <= todayEnd.getTime()
+    ).length;
+    return {
+      userId: member.userId,
+      name: member.user.firstName || member.user.username || member.user.telegramId,
+      open,
+      overdue,
+      dueSoon,
+      doneToday
+    };
+  });
+
+  return res.json(rows);
+});
+
 app.patch("/tasks/:id", async (req, res) => {
   const schema = z
     .object({
+      title: z.string().trim().min(1).optional(),
       status: z.nativeEnum(TaskStatus).optional(),
       assigneeId: z.string().min(1).nullable().optional(),
       dueDate: z.string().datetime().nullable().optional()
     })
-    .refine((data) => data.status !== undefined || data.assigneeId !== undefined || data.dueDate !== undefined, {
+    .refine((data) => data.status !== undefined || data.assigneeId !== undefined || data.dueDate !== undefined || data.title !== undefined, {
       message: "Nothing to update"
     });
   const parsed = schema.safeParse(req.body);
@@ -308,6 +565,9 @@ app.patch("/tasks/:id", async (req, res) => {
   }
 
   const updateData: any = {};
+  if (parsed.data.title !== undefined) {
+    updateData.title = parsed.data.title;
+  }
   if (parsed.data.assigneeId !== undefined) {
     updateData.assigneeId = parsed.data.assigneeId;
   }

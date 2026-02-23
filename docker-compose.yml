@@ -24,6 +24,12 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/familypulse?schema=public
       PORT: 4000
+      ENABLE_BOT: ${ENABLE_BOT:-true}
+      ENABLE_SCHEDULER: ${ENABLE_SCHEDULER:-true}
+      CALENDAR_SYNC_INTERVAL_MINUTES: ${CALENDAR_SYNC_INTERVAL_MINUTES:-30}
+      REMINDER_MORNING_TIME: ${REMINDER_MORNING_TIME:-09:00}
+      REMINDER_EVENING_TIME: ${REMINDER_EVENING_TIME:-19:00}
+      CHECKIN_TIME: ${CHECKIN_TIME:-21:30}
     ports:
       - "4000:4000"
     volumes:

@@ -6,6 +6,8 @@ type RequestOptions = {
   token?: string;
 };
 
+type QueryValue = string | number | boolean | undefined | null;
+
 export class ApiError extends Error {
   status: number;
   details?: unknown;
@@ -16,6 +18,17 @@ export class ApiError extends Error {
     this.status = status;
     this.details = details;
   }
+}
+
+function withQuery(path: string, query?: Record<string, QueryValue>) {
+  if (!query) return path;
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value === undefined || value === null || value === "") continue;
+    params.set(key, String(value));
+  }
+  const qs = params.toString();
+  return qs ? `${path}?${qs}` : path;
 }
 
 export function getErrorMessage(error: unknown): string {
@@ -73,8 +86,26 @@ export const api = {
   joinInvite: (token: string, code: string) =>
     request<any>("/invites/join", { method: "POST", token, body: { code } }),
   getCurrentHome: (token: string) => request<any>("/homes/current", { token }),
-  getToday: (token: string, scope: "all" | "mine" = "mine") => request<any>(`/today?scope=${scope}`, { token }),
-  getTasks: (token: string, scope: "all" | "mine" = "mine") => request<any>(`/tasks?scope=${scope}`, { token }),
+  getToday: (token: string, scope: "all" | "mine" = "mine") => request<any>(withQuery("/today", { scope }), { token }),
+  getTasks: (
+    token: string,
+    scopeOrFilters:
+      | "all"
+      | "mine"
+      | {
+          scope?: "all" | "mine";
+          from?: string;
+          to?: string;
+          status?: "all" | "open" | "done";
+          assigneeId?: string;
+          overdue?: boolean;
+          noDueDate?: boolean;
+          date?: string;
+        } = "mine"
+  ) => {
+    const filters = typeof scopeOrFilters === "string" ? { scope: scopeOrFilters } : scopeOrFilters;
+    return request<any>(withQuery("/tasks", filters), { token });
+  },
   createTask: (token: string, payload: any) => request<any>("/tasks", { method: "POST", token, body: payload }),
   updateTask: (token: string, id: string, payload: any) =>
     request<any>(`/tasks/${id}`, { method: "PATCH", token, body: payload }),
@@ -86,6 +117,17 @@ export const api = {
   doneRoutineInstance: (token: string, id: string) =>
     request<any>(`/routine-instances/${id}/done`, { method: "POST", token }),
   createInvite: (token: string) => request<any>("/invites", { method: "POST", token, body: {} }),
+  getTasksSummaryByAssignee: (token: string, from?: string, to?: string) =>
+    request<any>(withQuery("/tasks/summary/by-assignee", { from, to }), { token }),
+  getCalendarFeeds: (token: string) => request<any>("/calendar/feeds", { token }),
+  createCalendarFeed: (token: string, payload: { title: string; icsUrl: string }) =>
+    request<any>("/calendar/feeds", { method: "POST", token, body: payload }),
+  updateCalendarFeed: (token: string, id: string, payload: { title?: string; icsUrl?: string; isEnabled?: boolean }) =>
+    request<any>(`/calendar/feeds/${id}`, { method: "PATCH", token, body: payload }),
+  deleteCalendarFeed: (token: string, id: string) => request<any>(`/calendar/feeds/${id}`, { method: "DELETE", token }),
+  syncCalendarFeed: (token: string, id: string) => request<any>(`/calendar/feeds/${id}/sync`, { method: "POST", token }),
+  getCalendarEvents: (token: string, from: string, to: string, includeTasks = true) =>
+    request<any>(withQuery("/calendar/events", { from, to, includeTasks }), { token }),
   getScoreboard: (token: string, period: "week" | "month" = "week") =>
-    request<any>(`/scoreboard?period=${period}`, { token })
+    request<any>(withQuery("/scoreboard", { period }), { token })
 };

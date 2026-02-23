@@ -66,9 +66,19 @@
 
 #### Tasks
 - `POST /tasks`
-- `GET /tasks?scope=mine|all&date=YYYY-MM-DD`
-- `PATCH /tasks/:id` (status/assigneeId/dueDate)
+- `GET /tasks?scope=mine|all&date=YYYY-MM-DD` + расширенные фильтры:
+  - `from`, `to`, `status=open|done|all`, `assigneeId`, `overdue=true|false`, `noDueDate=true|false`
+- `PATCH /tasks/:id` (title/status/assigneeId/dueDate)
 - `POST /tasks/:id/done` (идемпотентно, начисление очков через `ScoreEvent`)
+- `GET /tasks/summary/by-assignee?from=YYYY-MM-DD&to=YYYY-MM-DD`
+
+#### Calendar (ICS)
+- `GET /calendar/feeds`
+- `POST /calendar/feeds` (`title`, `icsUrl`)
+- `PATCH /calendar/feeds/:id` (`title`, `icsUrl`, `isEnabled`)
+- `DELETE /calendar/feeds/:id`
+- `POST /calendar/feeds/:id/sync`
+- `GET /calendar/events?from=YYYY-MM-DD&to=YYYY-MM-DD&includeTasks=true|false`
 
 #### Routines
 - `POST /routines` (owner only, строгая валидация DAILY/WEEKLY + FIXED/ROTATE)
@@ -102,15 +112,19 @@
 
 В `backend/src/scheduler.ts`:
 - cron каждую минуту
+- синк enabled ICS feed'ов каждые `CALENDAR_SYNC_INTERVAL_MINUTES`
 - для каждого `ChatLink.enabled=true`:
   - `09:00` локального времени дома: отправка дайджеста (1 раз/день)
+  - `09:00` (`REMINDER_MORNING_TIME`): задачи на сегодня (1 раз/день)
+  - `19:00` (`REMINDER_EVENING_TIME`): просроченные + дедлайн завтра (1 раз/день)
   - `21:30` локального времени дома: отправка чек-ина с callback кнопкой (1 раз/день)
 
 ### 6) Mini App UI
 
 - `Onboarding` на главной: создать дом / войти по invite-коду.
-- `Today`: переключение `mine/all`, прогресс, points, streak, done по tasks/routines.
-- `Tasks`: создание, смена assignee, смена статуса.
+- `Today` как dashboard: переключение `mine/all`, прогресс, points, streak, быстрые фильтры и сводка задач по ответственным.
+- `Tasks`: единый `TaskCard`, создание/редактирование (title, assignee, dueDate, status), D-days и просрочка.
+- `Calendar`: month + agenda, события из ICS, задачи с дедлайнами по выбранной дате, управление feed’ами.
 - `Routines`: создание (DAILY/WEEKLY, FIXED/ROTATE), toggle active.
 - `Home`: участники, инвайт, статус привязки группового чата, scoreboard.
 
@@ -120,11 +134,14 @@
 - Для `401` на главной добавлена повторная авторизация (сброс токена + новый `auth/telegram`).
 - Обработаны частые ошибки WebView (`load failed` и т.п.) с человекочитаемыми сообщениями.
 
-## Важный текущий статус запуска
+## Runtime режимы запуска
 
-- Модули бота/планировщика реализованы (`backend/src/bot.ts`, `backend/src/scheduler.ts`).
-- Текущий `backend/src/index.ts` поднимает только Express API.
-- Если нужен runtime bot/scheduler в одном процессе, entrypoint нужно связать с запуском Telegraf и cron.
+`backend/src/index.ts` теперь запускает:
+- Express API (всегда)
+- Telegraf bot (если `ENABLE_BOT=true`)
+- Scheduler (если `ENABLE_SCHEDULER=true`)
+
+Это позволяет запускать API-only, либо all-in-one процесс.
 
 ## ENV
 
@@ -137,6 +154,12 @@ cp .env.example .env
 Обязательные переменные:
 - `JWT_SECRET`
 - `JWT_EXPIRES_IN`
+- `ENABLE_BOT`
+- `ENABLE_SCHEDULER`
+- `CALENDAR_SYNC_INTERVAL_MINUTES`
+- `REMINDER_MORNING_TIME`
+- `REMINDER_EVENING_TIME`
+- `CHECKIN_TIME`
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_BOT_USERNAME`
 - `TELEGRAM_MINI_APP_NAME`
@@ -151,6 +174,12 @@ cp .env.example .env
 docker compose up --build
 ```
 
+По умолчанию в compose включены bot+scheduler. Для API-only:
+
+```bash
+ENABLE_BOT=false ENABLE_SCHEDULER=false docker compose up --build
+```
+
 Сервисы:
 - Web: `http://localhost:3000`
 - API: `http://localhost:4000`
@@ -159,10 +188,31 @@ docker compose up --build
 
 ## Миграции и seed
 
-- Миграция: `backend/prisma/migrations/0001_init/migration.sql`
+- Миграции:
+  - `backend/prisma/migrations/0001_init/migration.sql`
+  - `backend/prisma/migrations/20260223160000_calendar_and_deadline_notifications/migration.sql`
 - Seed: `backend/prisma/seed.ts`
   - создаёт 2 demo-пользователя (`telegramId=10001`, `10002`)
   - создаёт demo-дом и 1 demo-задачу
+
+## Календарь (MVP)
+
+1. Откройте экран `Календарь`.
+2. Добавьте feed: название + публичный ICS URL (Google/Apple/другой iCal).
+3. Нажмите `Sync` для ручной синхронизации.
+4. События появятся в month/agenda и в деталях выбранной даты.
+5. Scheduler также выполняет фоновый sync enabled feed’ов.
+
+## Manual QA checklist
+
+- `docker compose up --build` поднимает web/api/db/caddy без ошибок.
+- При `ENABLE_BOT=true` бот запускается, команды `/start` и `/app` работают.
+- При `ENABLE_SCHEDULER=true` scheduler стартует и не падает.
+- Добавление ICS feed создаёт запись в БД, `POST /calendar/feeds/:id/sync` подтягивает события.
+- `/calendar/events` возвращает события и `tasksDue` в диапазоне.
+- Задача создаётся/редактируется с `dueDate`, в UI видны D-days и просрочка.
+- Быстрые фильтры на главной (`Просроченные`, `Сегодня`, `7 дней`, `Без дедлайна`) возвращают ожидаемые задачи.
+- Таблица сводки по ответственным показывает `open/overdue/dueSoon/doneToday`.
 
 ## Структура проекта
 

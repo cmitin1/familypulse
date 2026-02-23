@@ -68,6 +68,8 @@ model Home {
   scoreEvents    ScoreEvent[]
   streaks        Streak[]
   chatLinks      ChatLink[]
+  calendarFeeds  CalendarFeed[]
+  calendarEvents CalendarEvent[]
   activeUsers    User[]       @relation("ActiveHome")
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
@@ -184,9 +186,48 @@ model ChatLink {
   enabled          Boolean  @default(true)
   lastDigestYmd    String?
   lastCheckinYmd   String?
+  lastDeadlineMorningYmd String?
+  lastDeadlineEveningYmd String?
   home             Home     @relation(fields: [homeId], references: [id], onDelete: Cascade)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
   @@unique([homeId, telegramChatId])
+}
+
+model CalendarFeed {
+  id           String   @id @default(cuid())
+  homeId       String
+  title        String
+  icsUrl       String
+  isEnabled    Boolean  @default(true)
+  lastSyncedAt DateTime?
+  home         Home     @relation(fields: [homeId], references: [id], onDelete: Cascade)
+  events       CalendarEvent[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([homeId, icsUrl])
+}
+
+model CalendarEvent {
+  id          String   @id @default(cuid())
+  homeId      String
+  feedId      String
+  uid         String
+  title       String
+  description String?
+  location    String?
+  startAt     DateTime
+  endAt       DateTime
+  allDay      Boolean  @default(false)
+  hash        String
+  home        Home     @relation(fields: [homeId], references: [id], onDelete: Cascade)
+  feed        CalendarFeed @relation(fields: [feedId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([feedId, uid, startAt])
+  @@index([homeId, startAt])
+  @@index([feedId, startAt])
 }
