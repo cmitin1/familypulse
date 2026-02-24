@@ -138,6 +138,11 @@
 - `/today`
 - `/ai_tasks`
 - callback `checkin:<homeId>:<dateYmd>`
+- команды регистрируются в Telegram для `all_private_chats` и `all_group_chats` через `setMyCommands`.
+- `/start` и `/app` работают в mini-app-aware режиме:
+  - в личном чате отправляется `web_app` кнопка;
+  - в группе отправляется безопасный fallback-текст без `web_app` (обход `BUTTON_TYPE_INVALID`).
+- добавлены `safeReply` и `bot.catch(...)`, чтобы ошибки ответа/апдейта логировались и не прерывали обработку обновлений.
 - входящие сообщения чата сохраняются в `TelegramMessage` (дедуп по `(telegramChatId, telegramMessageId)`).
 - `/link` привязывает чат к дому и оставляет AI выключенным по умолчанию.
 - `/ai_on` и `/ai_off` (owner, в группе) явно управляют AI-анализом чата.
@@ -181,13 +186,13 @@
 ### 6) Mini App UI
 
 - `Onboarding` на главной: создать дом / войти по invite-коду.
-- `Today` как dashboard: компактная шапка (дата/дом/mine-all), задачи на сегодня в приоритете, события на сегодня, быстрые фильтры, компактная строка прогресса.
-- `Tasks`: компактный `TaskRow`/`TaskCard`, мульти-исполнители, создание/редактирование (title, assignees, dueDate, status), D-days и просрочка.
+- `Today` как dashboard: компактная шапка (дата/дом/mine-all), KPI-карточки (`today/overdue/events/AI pending`), переключаемый блок фильтров, компактная строка прогресса, сворачиваемый backlog и отдельный блок `AI сигналы` с переходом в AI Inbox.
+- `Tasks`: компактный `TaskRow`/`TaskCard`, мульти-исполнители, создание/редактирование (title, assignees, dueDate, status), D-days и просрочка, вкладки `mine/all` и `open/done/all`.
 - `Calendar`: month + agenda, события из ICS + ручные события, цветные точки, задачи с дедлайнами по выбранной дате.
 - `Events`: отдельный раздел событий и карточка события с привязанными задачами.
 - `Routines`: создание (DAILY/WEEKLY, FIXED/ROTATE), toggle active.
 - `Home`: участники, инвайт, статус привязки группового чата, scoreboard.
-- `AI Inbox` (`/ai`): pending suggestions, действия статусов (подтвердить/отклонить/игнорировать), today-stats и ручное обновление.
+- `AI Inbox` (`/ai`): вкладки статусов (`pending/approved/ignored`), отображение confidence (label + badge), ручное обновление, действия review (`подтвердить/отклонить/игнорировать`) только для `pending` карточек.
 
 ### 6.1) UI/UX стандартизация (light theme)
 
@@ -205,6 +210,8 @@
   - `web/components/ui/tabs.tsx`
   - `web/components/ui/sheet.tsx`
   - `web/components/ui/skeleton.tsx`
+  - `web/components/ui/state-block.tsx`
+  - `web/components/ui/status-indicator.tsx`
 - Mobile-first и safe-area:
   - tap-targets `~44px` (`h-11/min-h-11`) для интерактивных элементов,
   - стабильные safe-area отступы в layout/nav/sheet.
@@ -317,6 +324,7 @@ ENABLE_BOT=false ENABLE_SCHEDULER=false docker compose up --build
 
 - `docker compose up --build` поднимает web/api/db/caddy без ошибок.
 - При `ENABLE_BOT=true` бот запускается, команды `/start` и `/app` работают.
+- В групповом чате `/start` и `/app` не падают с `BUTTON_TYPE_INVALID` и отдают fallback-инструкцию открыть Mini App через личный чат.
 - При `ENABLE_SCHEDULER=true` scheduler стартует и не падает.
 - Добавление ICS feed создаёт запись в БД, `POST /calendar/feeds/:id/sync` подтягивает события.
 - `/calendar/events` возвращает события и `tasksDue` в диапазоне.
@@ -329,8 +337,8 @@ ENABLE_BOT=false ENABLE_SCHEDULER=false docker compose up --build
 - В календаре месяца отображаются цветные точки на датах с событиями.
 - Можно создать событие-диапазон и добавить к нему задачи из event details.
 - В `Routines` кнопка переключения на русском: `Отключить`/`Включить`.
-- AI Inbox (`/ai`) показывает pending suggestions и позволяет approve/reject/ignore.
-- AI Inbox (`/ai`) показывает pending suggestions и позволяет менять статусы карточек.
+- AI Inbox (`/ai`) показывает вкладки `Ожидают / Подтверждены / Игнор` и корректно переключает набор карточек по статусу.
+- Для карточек в архивных статусах (`approved/ignored`) действия review недоступны, для `pending` доступны.
 - При выключенном `AI_FEATURE_ENABLED=false` backend/bot отвечают корректно без падения.
 - После `/link` AI для чата выключен, включается только через `/ai_on` (owner).
 - `/today` и `/digest` в боте отдают компактную сводку с AI-блоком.
