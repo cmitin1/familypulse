@@ -15,6 +15,7 @@ import { TaskEditorSheet } from "@/components/tasks/task-editor-sheet";
 import { TasksSummaryTable } from "@/components/tasks/tasks-summary-table";
 import { Badge } from "@/components/ui/badge";
 import { StatusIndicator } from "@/components/ui/status-indicator";
+import { Filter, Plus } from "lucide-react";
 
 declare global {
   interface Window {
@@ -178,8 +179,10 @@ export default function TodayPage() {
       setBacklogTasks((openRows ?? []).filter((task: any) => !todayIds.has(task.id)));
       setSummary(summaryRows);
       if (aiSuggestionsResp && Array.isArray(aiSuggestionsResp.rows)) {
-        setAiPendingCount(aiSuggestionsResp.rows.length);
-        setAiPendingLabel(String(aiSuggestionsResp.rows.length));
+        const hasMore = Boolean(aiSuggestionsResp.nextCursor);
+        const shownCount = aiSuggestionsResp.rows.length;
+        setAiPendingCount(shownCount);
+        setAiPendingLabel(hasMore && shownCount >= 50 ? "50+" : String(shownCount));
       } else {
         setAiPendingCount(null);
         setAiPendingLabel("AI выкл");
@@ -239,8 +242,10 @@ export default function TodayPage() {
         setBacklogTasks((openRows ?? []).filter((task: any) => !todayIds.has(task.id)));
         setSummary(summaryRows);
         if (aiSuggestionsResp && Array.isArray(aiSuggestionsResp.rows)) {
-          setAiPendingCount(aiSuggestionsResp.rows.length);
-          setAiPendingLabel(String(aiSuggestionsResp.rows.length));
+          const hasMore = Boolean(aiSuggestionsResp.nextCursor);
+          const shownCount = aiSuggestionsResp.rows.length;
+          setAiPendingCount(shownCount);
+          setAiPendingLabel(hasMore && shownCount >= 50 ? "50+" : String(shownCount));
         } else {
           setAiPendingCount(null);
           setAiPendingLabel("AI выкл");
@@ -353,21 +358,21 @@ export default function TodayPage() {
     <div className="page-shell">
       {error ? <Alert variant="error">{error}</Alert> : null}
       {notice ? <Alert variant="info">{notice}</Alert> : null}
-      <Card className="space-y-3">
-        <div className="flex items-start justify-between gap-3">
+      <Card className="space-y-2.5">
+        <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <h1 className="page-title">{todayLabel}</h1>
-            <p className="page-subtitle">{today?.date ?? "—"}</p>
+            <p className="text-xs text-muted-foreground">{today?.date ?? "—"}</p>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <Button size="sm" variant="outline" onClick={() => (window.location.href = "/home")}>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <Button size="sm" variant="outline" className="px-2.5" onClick={() => (window.location.href = "/home")}>
               {home?.name ?? "Дом"}
             </Button>
             <div className="inline-flex rounded-lg border border-border bg-secondary p-1">
-              <Button size="sm" variant={scope === "mine" ? "default" : "ghost"} onClick={() => setScope("mine")}>
+              <Button size="sm" className="px-2.5" variant={scope === "mine" ? "default" : "ghost"} onClick={() => setScope("mine")}>
                 Мои
               </Button>
-              <Button size="sm" variant={scope === "all" ? "default" : "ghost"} onClick={() => setScope("all")}>
+              <Button size="sm" className="px-2.5" variant={scope === "all" ? "default" : "ghost"} onClick={() => setScope("all")}>
                 Все
               </Button>
             </div>
@@ -375,43 +380,59 @@ export default function TodayPage() {
         </div>
 
         <div className="grid grid-cols-2 gap-2">
-          <div className="rounded-lg border border-border bg-muted/40 px-3 py-2">
+          <div className="rounded-lg border border-border bg-muted/40 px-2.5 py-1.5">
             <p className="text-xs text-muted-foreground">Сегодня</p>
-            <p className="text-lg font-semibold text-foreground">{todayOpenCount}</p>
+            <p className="text-base font-semibold leading-tight text-foreground">{todayOpenCount}</p>
           </div>
-          <div className="rounded-lg border border-border bg-muted/40 px-3 py-2">
+          <div className="rounded-lg border border-border bg-muted/40 px-2.5 py-1.5">
             <p className="text-xs text-muted-foreground">Просрочено</p>
-            <p className="text-lg font-semibold text-foreground">{overdueCount}</p>
+            <p className="text-base font-semibold leading-tight text-foreground">{overdueCount}</p>
           </div>
-          <div className="rounded-lg border border-border bg-muted/40 px-3 py-2">
+          <div className="rounded-lg border border-border bg-muted/40 px-2.5 py-1.5">
             <p className="text-xs text-muted-foreground">События</p>
-            <p className="text-lg font-semibold text-foreground">{todayEventsCount}</p>
+            <p className="text-base font-semibold leading-tight text-foreground">{todayEventsCount}</p>
           </div>
-          <div className="rounded-lg border border-border bg-muted/40 px-3 py-2">
+          <div className="rounded-lg border border-border bg-muted/40 px-2.5 py-1.5">
             <p className="text-xs text-muted-foreground">AI / Pending</p>
-            <p className="text-lg font-semibold text-foreground">{aiPendingLabel}</p>
+            <p className="text-base font-semibold leading-tight text-foreground">{aiPendingLabel}</p>
           </div>
         </div>
 
-        <div className="space-y-1">
-          <p className="text-xs text-muted-foreground">Выполнено сегодня: {done} / {total}</p>
+        <div className="space-y-0.5">
+          <p className="text-xs text-muted-foreground">{done}/{total} выполнено сегодня</p>
           <div className="h-2 overflow-hidden rounded-full bg-secondary">
             <div className="h-full bg-primary transition-all" style={{ width: `${progress}%` }} />
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <Button className="flex-1" onClick={() => setEditorOpen(true)}>
-            + Новая задача
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => setShowFilters((value) => !value)}>
-            Фильтры
-          </Button>
-        </div>
-
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>Текущий фильтр: {activeFilterLabel}</span>
-          {aiPendingCount === null ? <span>AI временно недоступен</span> : null}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <Badge variant="outline" className="truncate">
+              Фильтр: {activeFilterLabel}
+            </Badge>
+            {aiPendingCount === null ? <Badge variant="outline">AI временно недоступен</Badge> : null}
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-11 px-0"
+              aria-label="Фильтры"
+              title="Фильтры"
+              onClick={() => setShowFilters((value) => !value)}
+            >
+              <Filter className="h-4 w-4" />
+            </Button>
+            <Button
+              size="sm"
+              className="w-11 px-0"
+              aria-label="Новая задача"
+              title="Новая задача"
+              onClick={() => setEditorOpen(true)}
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
 
         {showFilters ? (
