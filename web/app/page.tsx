@@ -39,6 +39,9 @@ export default function TodayPage() {
   const [summary, setSummary] = useState<any[]>([]);
   const [taskFilter, setTaskFilter] = useState<"overdue" | "today" | "week" | "noDueDate">("today");
   const [editorOpen, setEditorOpen] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+  const [aiPendingCount, setAiPendingCount] = useState<number | null>(null);
+  const [aiPendingLabel, setAiPendingLabel] = useState("—");
 
   function addDays(date: Date, days: number) {
     return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
@@ -155,13 +158,18 @@ export default function TodayPage() {
         setTasks([]);
         setBacklogTasks([]);
         setSummary([]);
+        setAiPendingCount(null);
+        setAiPendingLabel("—");
         return;
       }
-      const [t, taskRows, summaryRows, openRows] = await Promise.all([
+      const [t, taskRows, summaryRows, openRows, aiSuggestionsResp] = await Promise.all([
         api.getToday(actualToken, scope),
         api.getTasks(actualToken, tasksQuery),
         api.getTasksSummaryByAssignee(actualToken, from, to),
-        api.getTasks(actualToken, { scope, status: "open" as const })
+        api.getTasks(actualToken, { scope, status: "open" as const }),
+        api
+          .getAiSuggestions(actualToken, { status: "pending", limit: 50 })
+          .catch(() => null)
       ]);
       setHome(currentHome);
       setToday(t);
@@ -169,6 +177,13 @@ export default function TodayPage() {
       const todayIds = new Set((t?.tasks ?? []).map((task: any) => task.id));
       setBacklogTasks((openRows ?? []).filter((task: any) => !todayIds.has(task.id)));
       setSummary(summaryRows);
+      if (aiSuggestionsResp && Array.isArray(aiSuggestionsResp.rows)) {
+        setAiPendingCount(aiSuggestionsResp.rows.length);
+        setAiPendingLabel(String(aiSuggestionsResp.rows.length));
+      } else {
+        setAiPendingCount(null);
+        setAiPendingLabel("AI выкл");
+      }
     })
       .then(() => {
         setStatus("OK");
@@ -204,13 +219,18 @@ export default function TodayPage() {
           setTasks([]);
           setBacklogTasks([]);
           setSummary([]);
+          setAiPendingCount(null);
+          setAiPendingLabel("—");
           return;
         }
-        const [t, taskRows, summaryRows, openRows] = await Promise.all([
+        const [t, taskRows, summaryRows, openRows, aiSuggestionsResp] = await Promise.all([
           api.getToday(actualToken, scope),
           api.getTasks(actualToken, tasksQuery),
           api.getTasksSummaryByAssignee(actualToken, from, to),
-          api.getTasks(actualToken, { scope, status: "open" as const })
+          api.getTasks(actualToken, { scope, status: "open" as const }),
+          api
+            .getAiSuggestions(actualToken, { status: "pending", limit: 50 })
+            .catch(() => null)
         ]);
         setHome(currentHome);
         setToday(t);
@@ -218,6 +238,13 @@ export default function TodayPage() {
         const todayIds = new Set((t?.tasks ?? []).map((task: any) => task.id));
         setBacklogTasks((openRows ?? []).filter((task: any) => !todayIds.has(task.id)));
         setSummary(summaryRows);
+        if (aiSuggestionsResp && Array.isArray(aiSuggestionsResp.rows)) {
+          setAiPendingCount(aiSuggestionsResp.rows.length);
+          setAiPendingLabel(String(aiSuggestionsResp.rows.length));
+        } else {
+          setAiPendingCount(null);
+          setAiPendingLabel("AI выкл");
+        }
       });
       setError("");
     } catch (err) {
@@ -309,20 +336,32 @@ export default function TodayPage() {
     day: "numeric",
     month: "short"
   }).format(new Date())}`;
+  const todayDateStart = today?.date ? new Date(`${today.date}T00:00:00`) : new Date(new Date().setHours(0, 0, 0, 0));
+  const overdueCount = backlogTasks.filter((task: any) => task?.dueDate && new Date(task.dueDate) < todayDateStart).length;
+  const todayOpenCount = (today?.tasks ?? []).filter((task: any) => task.status === "OPEN").length;
+  const todayEventsCount = (today?.events ?? []).length;
+  const activeFilterLabel =
+    taskFilter === "overdue"
+      ? "Просроченные"
+      : taskFilter === "today"
+        ? "Сегодня"
+        : taskFilter === "week"
+          ? "7 дней"
+          : "Без дедлайна";
 
   return (
     <div className="page-shell">
       {error ? <Alert variant="error">{error}</Alert> : null}
       {notice ? <Alert variant="info">{notice}</Alert> : null}
       <Card className="space-y-3">
-        <div className="page-header">
-          <div>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
             <h1 className="page-title">{todayLabel}</h1>
             <p className="page-subtitle">{today?.date ?? "—"}</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <Button size="sm" variant="outline" onClick={() => (window.location.href = "/home")}>
-              Дом: {home.name}
+              {home?.name ?? "Дом"}
             </Button>
             <div className="inline-flex rounded-lg border border-border bg-secondary p-1">
               <Button size="sm" variant={scope === "mine" ? "default" : "ghost"} onClick={() => setScope("mine")}>
@@ -334,21 +373,63 @@ export default function TodayPage() {
             </div>
           </div>
         </div>
+
         <div className="grid grid-cols-2 gap-2">
-          <Button variant={taskFilter === "overdue" ? "default" : "outline"} onClick={() => setTaskFilter("overdue")}>
-            Просроченные
+          <div className="rounded-lg border border-border bg-muted/40 px-3 py-2">
+            <p className="text-xs text-muted-foreground">Сегодня</p>
+            <p className="text-lg font-semibold text-foreground">{todayOpenCount}</p>
+          </div>
+          <div className="rounded-lg border border-border bg-muted/40 px-3 py-2">
+            <p className="text-xs text-muted-foreground">Просрочено</p>
+            <p className="text-lg font-semibold text-foreground">{overdueCount}</p>
+          </div>
+          <div className="rounded-lg border border-border bg-muted/40 px-3 py-2">
+            <p className="text-xs text-muted-foreground">События</p>
+            <p className="text-lg font-semibold text-foreground">{todayEventsCount}</p>
+          </div>
+          <div className="rounded-lg border border-border bg-muted/40 px-3 py-2">
+            <p className="text-xs text-muted-foreground">AI / Pending</p>
+            <p className="text-lg font-semibold text-foreground">{aiPendingLabel}</p>
+          </div>
+        </div>
+
+        <div className="space-y-1">
+          <p className="text-xs text-muted-foreground">Выполнено сегодня: {done} / {total}</p>
+          <div className="h-2 overflow-hidden rounded-full bg-secondary">
+            <div className="h-full bg-primary transition-all" style={{ width: `${progress}%` }} />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button className="flex-1" onClick={() => setEditorOpen(true)}>
+            + Новая задача
           </Button>
-          <Button variant={taskFilter === "today" ? "default" : "outline"} onClick={() => setTaskFilter("today")}>
-            Сегодня
-          </Button>
-          <Button variant={taskFilter === "week" ? "default" : "outline"} onClick={() => setTaskFilter("week")}>
-            7 дней
-          </Button>
-          <Button variant={taskFilter === "noDueDate" ? "default" : "outline"} onClick={() => setTaskFilter("noDueDate")}>
-            Без дедлайна
+          <Button size="sm" variant="outline" onClick={() => setShowFilters((value) => !value)}>
+            Фильтры
           </Button>
         </div>
-        <Button onClick={() => setEditorOpen(true)}>+ Новая задача</Button>
+
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>Текущий фильтр: {activeFilterLabel}</span>
+          {aiPendingCount === null ? <span>AI временно недоступен</span> : null}
+        </div>
+
+        {showFilters ? (
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant={taskFilter === "overdue" ? "default" : "outline"} onClick={() => setTaskFilter("overdue")}>
+              Просроченные
+            </Button>
+            <Button size="sm" variant={taskFilter === "today" ? "default" : "outline"} onClick={() => setTaskFilter("today")}>
+              Сегодня
+            </Button>
+            <Button size="sm" variant={taskFilter === "week" ? "default" : "outline"} onClick={() => setTaskFilter("week")}>
+              7 дней
+            </Button>
+            <Button size="sm" variant={taskFilter === "noDueDate" ? "default" : "outline"} onClick={() => setTaskFilter("noDueDate")}>
+              Без дедлайна
+            </Button>
+          </div>
+        ) : null}
       </Card>
 
       {isLoading ? (
