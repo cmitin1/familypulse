@@ -29,7 +29,14 @@ const config: Config = {
         warning: "hsl(var(--warning))",
         "warning-foreground": "hsl(var(--warning-foreground))",
         danger: "hsl(var(--danger))",
-        "danger-foreground": "hsl(var(--danger-foreground))"
+        "danger-foreground": "hsl(var(--danger-foreground))",
+        ai: "hsl(var(--ai-bg))",
+        "ai-border": "hsl(var(--ai-border))",
+        "ai-foreground": "hsl(var(--ai-foreground))",
+        "ai-accent": "hsl(var(--ai-accent))",
+        "focus-ring-strong": "hsl(var(--focus-ring-strong))",
+        "surface-elevated": "hsl(var(--surface-elevated))",
+        "surface-muted": "hsl(var(--surface-muted))"
       }
     }
   },

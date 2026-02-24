@@ -46,7 +46,7 @@ export default function EventDetailsPage() {
       </Card>
       <Card className="space-y-2">
         <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold">Задачи события</h2>
+          <h2 className="section-title">Задачи события</h2>
           <Button size="sm" onClick={() => setEditorOpen(true)}>
             + Задача
           </Button>

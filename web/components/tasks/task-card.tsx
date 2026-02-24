@@ -75,7 +75,7 @@ export function TaskCard({
   const isDone = task.status === "DONE";
 
   return (
-    <Card className="p-2.5">
+    <Card density="compact">
       <div className="flex items-center gap-2">
         <input
           type="checkbox"

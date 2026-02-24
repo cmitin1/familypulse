@@ -63,7 +63,7 @@ export default function HomePage() {
         </Button>
       </Card>
       <Card className="space-y-2">
-        <h2 className="text-base font-semibold">Участники</h2>
+        <h2 className="section-title">Участники</h2>
         {(home?.members ?? []).length === 0 ? (
           <p className="empty-state">Участников пока нет</p>
         ) : (
@@ -75,6 +75,7 @@ export default function HomePage() {
         )}
       </Card>
       <Card className="space-y-2">
+        <h2 className="section-title">Приглашения</h2>
         <Button
           onClick={async () => {
             if (!token) return;
@@ -91,7 +92,7 @@ export default function HomePage() {
         {invite?.code ? <p className="text-sm text-foreground">Инвайт-код: {invite.code}</p> : null}
       </Card>
       <Card className="space-y-2">
-        <h2 className="text-base font-semibold">Войти в дом по инвайт-коду</h2>
+        <h2 className="section-title">Войти в дом по инвайт-коду</h2>
         <Input value={joinCode} onChange={(e) => setJoinCode(e.target.value)} placeholder="Введите инвайт-код" />
         <Button
           variant="outline"
@@ -113,7 +114,7 @@ export default function HomePage() {
         </Button>
       </Card>
       <Card className="space-y-2">
-        <h2 className="text-base font-semibold">Таблица очков</h2>
+        <h2 className="section-title">Таблица очков</h2>
         {scoreboard.length === 0 ? (
           <p className="empty-state">Пока нет данных по очкам.</p>
         ) : (

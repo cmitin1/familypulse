@@ -11,6 +11,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { api, getErrorMessage } from "@/lib/api";
 import { fromInputDateTimeValue, toInputDateTimeValue } from "@/lib/datetime";
 import { getToken } from "@/lib/session";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { StateBlock } from "@/components/ui/state-block";
 
 type Suggestion = {
   id: string;
@@ -38,12 +40,13 @@ export default function AiInboxPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [memberNamesById, setMemberNamesById] = useState<Record<string, string>>({});
   const [dueDraftById, setDueDraftById] = useState<Record<string, string>>({});
+  const [statusTab, setStatusTab] = useState<"pending" | "approved" | "ignored">("pending");
 
   async function load(currentToken: string) {
     setLoading(true);
     try {
       const [list, summary, home] = await Promise.all([
-        api.getAiSuggestions(currentToken, { status: "pending", limit: 50 }),
+        api.getAiSuggestions(currentToken, { status: statusTab, limit: 50 }),
         api.getAiTodaySummary(currentToken),
         api.getCurrentHome(currentToken)
       ]);
@@ -103,7 +106,7 @@ export default function AiInboxPage() {
       return;
     }
     load(t);
-  }, []);
+  }, [statusTab]);
 
   async function updateStatus(id: string, action: "approve" | "reject" | "ignore") {
     if (!token) return;
@@ -148,21 +151,48 @@ export default function AiInboxPage() {
     }
   }
 
+  function confidenceLabel(confidence: number | null) {
+    if (confidence === null) return "Нужна проверка";
+    if (confidence >= 0.75) return "Высокая уверенность";
+    if (confidence >= 0.5) return "Средняя уверенность";
+    return "Низкая уверенность";
+  }
+
+  function confidenceVariant(confidence: number | null): "outline" | "success" | "warning" {
+    if (confidence === null) return "outline";
+    if (confidence >= 0.75) return "success";
+    return "warning";
+  }
+
   return (
     <div className="page-shell">
       {error ? <Alert variant="error">{error}</Alert> : null}
       {notice ? <Alert variant="success">{notice}</Alert> : null}
       <Card className="space-y-2">
-        <h1 className="page-title">AI Inbox</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="page-title">AI Inbox</h1>
+          <Badge variant="ai">Проверка человеком</Badge>
+        </div>
         <p className="text-sm text-muted-foreground">{summaryText || "Кандидаты из семейного чата (безопасный режим)."}</p>
+        <p className="helper-text">AI предлагает кандидатов, а финальное решение всегда принимает участник семьи.</p>
         {summaryStats ? (
           <p className="text-xs text-muted-foreground">
-            Сегодня: задачи {summaryStats.tasks}, рутины {summaryStats.routines}, события {summaryStats.events}, AI {summaryStats.aiSuggestions}
+            Сегодня: задачи {summaryStats.tasks ?? 0}, рутины {summaryStats.routines ?? 0}, события {summaryStats.events ?? 0}, AI{" "}
+            {summaryStats.aiSuggestions ?? 0}
           </p>
         ) : null}
         <Button size="sm" variant="outline" onClick={refreshInbox} disabled={!token || refreshing || loading}>
           {refreshing ? "Анализируем чат..." : "Обновить"}
         </Button>
+      </Card>
+      <Card className="space-y-2" density="compact">
+        <Tabs value={statusTab} onValueChange={(value) => setStatusTab(value as "pending" | "approved" | "ignored")}>
+          <TabsList columns={3}>
+            <TabsTrigger value="pending">Ожидают</TabsTrigger>
+            <TabsTrigger value="approved">Подтверждены</TabsTrigger>
+            <TabsTrigger value="ignored">Игнор</TabsTrigger>
+          </TabsList>
+        </Tabs>
       </Card>
       <Card className="space-y-2">
         {loading ? (
@@ -172,26 +202,37 @@ export default function AiInboxPage() {
             <Skeleton className="h-24 w-full" />
           </div>
         ) : suggestions.length === 0 ? (
-          <p className="empty-state">Пока нет ожидающих AI-кандидатов.</p>
+          statusTab === "pending" ? (
+            <StateBlock message="Пока нет ожидающих AI-кандидатов." actionLabel="Обновить" onAction={refreshInbox} />
+          ) : (
+            <p className="empty-state">
+              {statusTab === "approved" ? "Подтвержденных AI-кандидатов пока нет." : "Игнорированных AI-кандидатов пока нет."}
+            </p>
+          )
         ) : (
           suggestions.map((item) => {
             const confidence = item.confidence !== null ? `${Math.round(item.confidence * 100)}%` : "—";
             const refsCount = item.sourceMessageRefs?.length ?? 0;
+            const canReview = statusTab === "pending";
             return (
               <div key={item.id} className="space-y-2 rounded-lg border border-border bg-card p-3">
                 <div className="flex items-center justify-between gap-2">
-                  <Badge variant="outline">{item.type.toLowerCase()}</Badge>
-                  <span className="text-xs text-muted-foreground">Уверенность: {confidence}</span>
+                  <div className="flex items-center gap-1.5">
+                    <Badge variant="ai">AI</Badge>
+                    <Badge variant="outline">{item.type.toLowerCase()}</Badge>
+                  </div>
+                  <Badge variant={confidenceVariant(item.confidence)}>{confidence}</Badge>
                 </div>
+                <p className="helper-text">{confidenceLabel(item.confidence)}</p>
                 <p className="text-sm font-semibold text-foreground">{item.title}</p>
                 {item.description ? <p className="text-sm text-muted-foreground whitespace-pre-wrap">{item.description}</p> : null}
-                <div className="text-xs text-muted-foreground">
+                <div className="ai-card text-xs">
                   <p>Исполнитель: {renderAssignee(item)}</p>
                   <p>{renderTime(item)}</p>
-                  <p>Источники: {refsCount} сообщений</p>
+                  <p>Источники: {refsCount} сообщений из чата</p>
                   <p>Создано: {new Date(item.createdAt).toLocaleString("ru-RU")}</p>
                 </div>
-                {item.type === "TASK" ? (
+                {item.type === "TASK" && canReview ? (
                   <div className="space-y-1">
                     <label className="text-xs text-muted-foreground">Срок перед подтверждением</label>
                     <input
@@ -210,20 +251,24 @@ export default function AiInboxPage() {
                     </p>
                   </div>
                 ) : null}
-                <div className="grid grid-cols-3 gap-2">
-                  <Button size="sm" onClick={() => updateStatus(item.id, "approve")}>
-                    <Check className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
-                    Подтвердить
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => updateStatus(item.id, "reject")}>
-                    <X className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
-                    Отклонить
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => updateStatus(item.id, "ignore")}>
-                    <Clock3 className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
-                    Игнорировать
-                  </Button>
-                </div>
+                {canReview ? (
+                  <div className="grid grid-cols-3 gap-2">
+                    <Button size="sm" onClick={() => updateStatus(item.id, "approve")}>
+                      <Check className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+                      Подтвердить
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => updateStatus(item.id, "reject")}>
+                      <X className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+                      Отклонить
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => updateStatus(item.id, "ignore")}>
+                      <Clock3 className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+                      Игнорировать
+                    </Button>
+                  </div>
+                ) : (
+                  <p className="helper-text">Карточка в архивном статусе. Действия недоступны.</p>
+                )}
               </div>
             );
           })

@@ -27,6 +27,13 @@
   --warning-foreground: 0 0% 100%;
   --danger: 0 72% 46%;
   --danger-foreground: 0 0% 100%;
+  --ai-bg: 262 100% 97%;
+  --ai-border: 258 89% 87%;
+  --ai-foreground: 262 61% 38%;
+  --ai-accent: 263 70% 50%;
+  --focus-ring-strong: 221 83% 53%;
+  --surface-elevated: 0 0% 100%;
+  --surface-muted: 210 40% 96%;
 }
 
 body {
@@ -60,11 +67,35 @@ body {
   }
 
   .page-title {
-    @apply text-xl font-semibold tracking-tight text-foreground;
+    @apply text-[22px] font-semibold leading-7 tracking-tight text-foreground;
   }
 
   .page-subtitle {
     @apply text-sm text-muted-foreground;
+  }
+
+  .section-title {
+    @apply text-base font-semibold leading-[22px] text-foreground;
+  }
+
+  .card-title {
+    @apply text-sm font-semibold leading-5 text-foreground;
+  }
+
+  .helper-text {
+    @apply text-xs leading-4 text-muted-foreground;
+  }
+
+  .chip-label {
+    @apply text-xs font-medium leading-[14px];
+  }
+
+  .kpi-value {
+    @apply text-base font-semibold leading-tight text-foreground;
+  }
+
+  .state-block {
+    @apply space-y-3 rounded-lg border border-dashed border-border bg-muted/50 p-4;
   }
 
   .empty-state {
@@ -73,5 +104,24 @@ body {
 
   .field-label {
     @apply text-sm font-medium text-foreground;
+  }
+
+  .ai-pill {
+    @apply inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium;
+    border-color: hsl(var(--ai-border));
+    background-color: hsl(var(--ai-bg));
+    color: hsl(var(--ai-foreground));
+  }
+
+  .ai-card {
+    @apply rounded-lg border p-3;
+    border-color: hsl(var(--ai-border));
+    background-color: hsl(var(--ai-bg));
+    color: hsl(var(--ai-foreground));
+  }
+
+  .interactive-focus {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2;
+    --tw-ring-color: hsl(var(--focus-ring-strong));
   }
 }

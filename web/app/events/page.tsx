@@ -100,7 +100,7 @@ export default function EventsPage() {
         </Button>
       </Card>
       <Card className="space-y-2">
-        <h2 className="text-base font-semibold">Ближайшие события</h2>
+        <h2 className="section-title">Ближайшие события</h2>
         {events.length === 0 ? (
           <p className="empty-state">Событий пока нет.</p>
         ) : (

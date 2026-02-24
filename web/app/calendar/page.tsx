@@ -175,7 +175,7 @@ export default function CalendarPage() {
       </Card>
 
       <Card className="space-y-2">
-        <h2 className="text-base font-semibold">На дату: {selectedYmd}</h2>
+        <h2 className="section-title">На дату: {selectedYmd}</h2>
         <p className="text-xs text-muted-foreground">События и задачи с дедлайном</p>
         <Separator />
         {dayEvents.map((event) => (
@@ -196,7 +196,7 @@ export default function CalendarPage() {
       </Card>
 
       <Card className="space-y-2">
-        <h2 className="text-base font-semibold">Подключить календарь (ICS)</h2>
+        <h2 className="section-title">Подключить календарь (ICS)</h2>
         <Input placeholder="Название feed" value={title} onChange={(e) => setTitle(e.target.value)} />
         <Input placeholder="https://...ics" value={icsUrl} onChange={(e) => setIcsUrl(e.target.value)} />
         <Button
@@ -217,7 +217,7 @@ export default function CalendarPage() {
       </Card>
 
       <Card className="space-y-2">
-        <h2 className="text-base font-semibold">Feeds</h2>
+        <h2 className="section-title">Feeds</h2>
         {feeds.length === 0 ? (
           <p className="empty-state">Пока нет подключенных календарей.</p>
         ) : (

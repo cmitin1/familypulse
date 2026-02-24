@@ -11,6 +11,7 @@ import { StatusIndicator } from "@/components/ui/status-indicator";
 import { api, getErrorMessage } from "@/lib/api";
 import { getToken } from "@/lib/session";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const weekDays = [
   { label: "Вс", value: 0 },
@@ -68,14 +69,12 @@ export default function RoutinesPage() {
           <p className="field-label">Название рутины</p>
           <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Например: вечерняя уборка" />
         </div>
-        <div className="grid grid-cols-2 gap-2">
-          <Button variant={scheduleType === "DAILY" ? "default" : "outline"} onClick={() => setScheduleType("DAILY")}>
-            Каждый день
-          </Button>
-          <Button variant={scheduleType === "WEEKLY" ? "default" : "outline"} onClick={() => setScheduleType("WEEKLY")}>
-            По дням недели
-          </Button>
-        </div>
+        <Tabs value={scheduleType} onValueChange={(value) => setScheduleType(value as "DAILY" | "WEEKLY")}>
+          <TabsList columns={2}>
+            <TabsTrigger value="DAILY">Каждый день</TabsTrigger>
+            <TabsTrigger value="WEEKLY">По дням недели</TabsTrigger>
+          </TabsList>
+        </Tabs>
         {scheduleType === "WEEKLY" ? (
           <div className="flex flex-wrap gap-2">
             {weekDays.map((day) => (
@@ -90,14 +89,12 @@ export default function RoutinesPage() {
             ))}
           </div>
         ) : null}
-        <div className="grid grid-cols-2 gap-2">
-          <Button variant={assigneeMode === "ROTATE" ? "default" : "outline"} onClick={() => setAssigneeMode("ROTATE")}>
-            По очереди
-          </Button>
-          <Button variant={assigneeMode === "FIXED" ? "default" : "outline"} onClick={() => setAssigneeMode("FIXED")}>
-            Фиксированный
-          </Button>
-        </div>
+        <Tabs value={assigneeMode} onValueChange={(value) => setAssigneeMode(value as "ROTATE" | "FIXED")}>
+          <TabsList columns={2}>
+            <TabsTrigger value="ROTATE">По очереди</TabsTrigger>
+            <TabsTrigger value="FIXED">Фиксированный</TabsTrigger>
+          </TabsList>
+        </Tabs>
         {assigneeMode === "FIXED" ? (
           <select
             className="h-11 w-full rounded-lg border border-input bg-card px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
@@ -137,6 +134,7 @@ export default function RoutinesPage() {
         </Button>
       </Card>
       <Card className="space-y-2">
+        <h2 className="section-title">Список рутин</h2>
         {loading ? (
           <div className="space-y-2">
             <Skeleton className="h-5 w-32" />

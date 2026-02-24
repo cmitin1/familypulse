@@ -10,11 +10,15 @@ import { getToken } from "@/lib/session";
 import { TaskEditorSheet } from "@/components/tasks/task-editor-sheet";
 import { TaskCard } from "@/components/tasks/task-card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StateBlock } from "@/components/ui/state-block";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export default function TasksPage() {
   const [token, setToken] = useState("");
   const [tasks, setTasks] = useState<any[]>([]);
   const [home, setHome] = useState<any>(null);
+  const [scope, setScope] = useState<"mine" | "all">("mine");
+  const [statusFilter, setStatusFilter] = useState<"open" | "done" | "all">("open");
   const [editorOpen, setEditorOpen] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -22,7 +26,10 @@ export default function TasksPage() {
   async function load(currentToken: string) {
     setLoading(true);
     try {
-      const [list, currentHome] = await Promise.all([api.getTasks(currentToken, "all"), api.getCurrentHome(currentToken)]);
+      const [list, currentHome] = await Promise.all([
+        api.getTasks(currentToken, { scope, status: statusFilter }),
+        api.getCurrentHome(currentToken)
+      ]);
       setTasks(list);
       setHome(currentHome);
       setError("");
@@ -38,7 +45,7 @@ export default function TasksPage() {
     setToken(t);
     if (t) load(t);
     else setLoading(false);
-  }, []);
+  }, [scope, statusFilter]);
 
   return (
     <div className="page-shell">
@@ -47,6 +54,21 @@ export default function TasksPage() {
         <div className="page-header">
           <h1 className="page-title">Задачи</h1>
           <Button onClick={() => setEditorOpen(true)}>Новая задача</Button>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Tabs value={scope} onValueChange={(value) => setScope(value as "mine" | "all")} className="w-[132px]">
+            <TabsList columns={2}>
+              <TabsTrigger value="mine">Мои</TabsTrigger>
+              <TabsTrigger value="all">Все</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          <Tabs value={statusFilter} onValueChange={(value) => setStatusFilter(value as "open" | "done" | "all")} className="flex-1 min-w-[210px]">
+            <TabsList columns={3}>
+              <TabsTrigger value="open">Открытые</TabsTrigger>
+              <TabsTrigger value="done">Выполненные</TabsTrigger>
+              <TabsTrigger value="all">Все</TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
       </Card>
       <Card className="space-y-2">
@@ -57,12 +79,11 @@ export default function TasksPage() {
             <Skeleton className="h-24 w-full" />
           </div>
         ) : tasks.length === 0 ? (
-          <div className="space-y-3 rounded-lg border border-dashed border-border bg-muted/50 p-4">
-            <p className="text-sm text-muted-foreground">Нет задач — добавьте первую.</p>
-            <Button variant="outline" onClick={() => setEditorOpen(true)}>
-              Создать задачу
-            </Button>
-          </div>
+          <StateBlock
+            message="По текущему фильтру задач нет. Можно создать задачу или проверить AI Inbox."
+            actionLabel="Создать задачу"
+            onAction={() => setEditorOpen(true)}
+          />
         ) : (
           tasks.map((task) => (
             <TaskCard

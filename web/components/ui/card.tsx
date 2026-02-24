@@ -1,5 +1,29 @@
 import { cn } from "@/lib/utils";
+import { cva, type VariantProps } from "class-variance-authority";
 
-export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("rounded-xl border border-border bg-card p-4 shadow-sm", className)} {...props} />;
+const cardVariants = cva("rounded-xl border border-border p-4", {
+  variants: {
+    variant: {
+      default: "bg-card shadow-sm",
+      subtle: "bg-muted/40 shadow-none",
+      elevated: "bg-card shadow-md"
+    },
+    density: {
+      default: "p-4",
+      compact: "p-3"
+    }
+  },
+  defaultVariants: {
+    variant: "default",
+    density: "default"
+  }
+});
+
+export function Card({
+  className,
+  variant,
+  density,
+  ...props
+}: React.HTMLAttributes<HTMLDivElement> & VariantProps<typeof cardVariants>) {
+  return <div className={cn(cardVariants({ variant, density }), className)} {...props} />;
 }

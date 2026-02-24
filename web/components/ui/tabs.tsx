@@ -28,8 +28,17 @@ export function Tabs({
   );
 }
 
-export function TabsList({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <div className={cn("grid grid-cols-2 rounded-lg border border-border bg-secondary p-1", className)}>{children}</div>;
+export function TabsList({
+  children,
+  className,
+  columns = 2
+}: {
+  children: React.ReactNode;
+  className?: string;
+  columns?: 2 | 3 | 4;
+}) {
+  const colsClass = columns === 4 ? "grid-cols-4" : columns === 3 ? "grid-cols-3" : "grid-cols-2";
+  return <div className={cn("grid rounded-lg border border-border bg-secondary p-1", colsClass, className)}>{children}</div>;
 }
 
 export function TabsTrigger({ value, children }: { value: string; children: React.ReactNode }) {
